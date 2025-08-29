@@ -1,12 +1,16 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || "";
+
 module.exports = {
   solidity: "0.8.20",
   networks: {
-    doma: {
-      url: "DOMA_TESTNET_RPC_URL",  
-      accounts: ["0xYOUR_PRIVATE_KEY"] 
-    }
-  }
+    hardhat: {},
+    sepolia: {
+      url: SEPOLIA_RPC_URL,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
+  },
 };

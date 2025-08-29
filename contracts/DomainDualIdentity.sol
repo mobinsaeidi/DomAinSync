@@ -5,29 +5,52 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract DomainDualIdentity is ERC721, Ownable {
+    mapping(string => bytes32) private whoisHashes;
+    mapping(uint256 => string) private tokenToDomain;
     uint256 private _nextTokenId;
-    mapping(uint256 => string) private _domainNames;
-
-    event DomainTransferred(uint256 indexed tokenId, address indexed from, address indexed to, string domainName);
 
     constructor() ERC721("DomainDualIdentity", "DDI") Ownable(msg.sender) {}
+    function registerDomain(
+        string calldata domainName,
+        bytes32 whoisHash
+    ) external {
+        uint256 tokenId = _nextTokenId;
+        _safeMint(msg.sender, tokenId);
+        whoisHashes[domainName] = whoisHash;
+        tokenToDomain[tokenId] = domainName;
+        _nextTokenId++;
+    }
+    function getWhoisHash(
+        string calldata domainName
+    ) external view returns (bytes32) {
+        return whoisHashes[domainName];
+    }
+    function updateWhoisHash(
+        uint256 tokenId,
+        bytes32 newWhoisHash
+    ) external {
+        address owner = ownerOf(tokenId);
+        require(
+            msg.sender == owner ||
+                getApproved(tokenId) == msg.sender ||
+                isApprovedForAll(owner, msg.sender),
+            "Not owner or approved"
+        );
 
-    function mintDomain(address to, string memory domainName) external onlyOwner {
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        _domainNames[tokenId] = domainName;
+        require(_existsCustom(tokenId), "Token does not exist");
+
+        string memory domain = tokenToDomain[tokenId];
+        whoisHashes[domain] = newWhoisHash;
     }
 
-    function transferDomain(address to, uint256 tokenId) public {
-        require(_isApprovedOrOwner(msg.sender, tokenId), "Not owner or approved");
-        string memory domainName = _domainNames[tokenId];
-        address from = ownerOf(tokenId);
-        _transfer(from, to, tokenId);
-        emit DomainTransferred(tokenId, from, to, domainName);
+    function getDomainByTokenId(
+        uint256 tokenId
+    ) external view returns (string memory) {
+        require(_existsCustom(tokenId), "Token does not exist");
+        return tokenToDomain[tokenId];
     }
 
-    function getDomainName(uint256 tokenId) public view returns (string memory) {
-        require(_exists(tokenId), "Token does not exist");
-        return _domainNames[tokenId];
+    function _existsCustom(uint256 tokenId) internal view returns (bool) {
+        return _ownerOf(tokenId) != address(0);
     }
 }

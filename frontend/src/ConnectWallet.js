@@ -2,51 +2,60 @@ import React, { useState } from "react";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "./contractInfo";
 
-export default function ConnectWallet() {
-  const [walletAddress, setWalletAddress] = useState("");
-  const [contractName, setContractName] = useState("");
+// گرفتن provider مخصوص متامسک
+function getMetaMaskProvider() {
+  if (window.ethereum && window.ethereum.providers) {
+    return window.ethereum.providers.find((p) => p.isMetaMask);
+  } else if (window.ethereum && window.ethereum.isMetaMask) {
+    return window.ethereum;
+  }
+  return null;
+}
 
-  // اتصال به متامسک
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert("Metamask not found! Please install it.");
+function ConnectWallet() {
+  const [account, setAccount] = useState(null);
+  const [ownerAddress, setOwnerAddress] = useState(null);
+
+  async function connect() {
+    const provider = getMetaMaskProvider();
+    if (!provider) {
+      alert("MetaMask پیدا نشد! لطفاً مطمئن شو فعال هست یا افزونه‌های دیگر خاموش باشند.");
       return;
     }
-    try {
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-      setWalletAddress(accounts[0]);
-      await getContractName();
-    } catch (error) {
-      console.error("Connection error:", error);
-    }
-  };
 
-  // خواندن متد name() از قرارداد
-  const getContractName = async () => {
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
+      // اتصال به اکانت
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      setAccount(accounts[0]);
+
+      // ساخت provider برای ethers
+      const ethersProvider = new ethers.BrowserProvider(provider);
+      const signer = await ethersProvider.getSigner();
+
+      // ساخت نمونه قرارداد با signer
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const name = await contract.name();
-      setContractName(name);
+
+      // خواندن تابع view
+      const owner = await contract.owner(); // اگه اسمش چیز دیگه‌ست، همینجا عوضش کن
+      setOwnerAddress(owner);
+
     } catch (error) {
-      console.error("Error reading contract name:", error);
+      console.error("خطا در اتصال یا خواندن قرارداد:", error);
     }
-  };
+  }
 
   return (
-    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <h2>DomainSync Frontend</h2>
-      {walletAddress ? (
-        <>
-          <p>Connected Wallet: {walletAddress}</p>
-          <p>Contract Name: {contractName}</p>
-        </>
+    <div>
+      {account ? (
+        <div>
+          <p>متصل شد: {account}</p>
+          {ownerAddress && <p>صاحب قرارداد: {ownerAddress}</p>}
+        </div>
       ) : (
-        <button onClick={connectWallet}>Connect Wallet</button>
+        <button onClick={connect}>اتصال به متامسک</button>
       )}
     </div>
   );
 }
+
+export default ConnectWallet;

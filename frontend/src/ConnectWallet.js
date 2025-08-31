@@ -1,15 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from "./contractInfo";
 
 const SEPOLIA_CHAIN_ID = "0xaa36a7"; // Sepolia
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function ConnectWallet() {
   const [account, setAccount] = useState(null);
   const [owner, setOwner] = useState(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const [domains, setDomains] = useState([]);
 
+  // === Connect Wallet ===
   const connectWallet = async () => {
     try {
       if (!window.ethereum || !window.ethereum.isMetaMask) {
@@ -22,6 +25,7 @@ export default function ConnectWallet() {
       });
       setAccount(accounts[0]);
 
+      // Check & switch to Sepolia
       let chainId = await window.ethereum.request({ method: "eth_chainId" });
       if (chainId !== SEPOLIA_CHAIN_ID) {
         try {
@@ -38,7 +42,7 @@ export default function ConnectWallet() {
                   chainId: SEPOLIA_CHAIN_ID,
                   chainName: "Sepolia Test Network",
                   nativeCurrency: { name: "SepoliaETH", symbol: "ETH", decimals: 18 },
-                  rpcUrls: ["https://sepolia.infura.io/v3/"], 
+                  rpcUrls: ["https://sepolia.infura.io/v3/"],
                   blockExplorerUrls: ["https://sepolia.etherscan.io"],
                 },
               ],
@@ -51,11 +55,41 @@ export default function ConnectWallet() {
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
       const ownerAddress = await contract.owner();
       setOwner(ownerAddress);
 
+      // Fetch existing domains after connecting
+      await fetchDomains();
     } catch (err) {
       console.error(err);
+      setError(`❌ ${err.message || err}`);
+    }
+  };
+
+  // === Fetch Registered Domains ===
+  const fetchDomains = async () => {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+
+      const filter = contract.filters.Transfer(ZERO_ADDRESS, null);
+      const events = await contract.queryFilter(filter, 0, "latest");
+
+      const domainList = [];
+      for (let ev of events) {
+        const tokenId = ev.args.tokenId.toString();
+        const domainName = await contract.getDomainByTokenId(tokenId);
+        const whoisHash = await contract.getWhoisHash(domainName);
+        domainList.push({
+          tokenId,
+          domainName,
+          whoisHash,
+        });
+      }
+      setDomains(domainList);
+    } catch (err) {
+      console.error("Error fetching domains:", err);
       setError(`❌ ${err.message || err}`);
     }
   };
@@ -68,11 +102,14 @@ export default function ConnectWallet() {
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      const whoisHash = ethers.id(whoisData); // keccak256 hash of the string
+      const whoisHash = ethers.id(whoisData); // keccak256 hash of string
 
       const tx = await contract.registerDomain(name, whoisHash);
       await tx.wait();
       setStatus(`✅ Domain "${name}" registered successfully!`);
+
+      // Refresh domain list
+      await fetchDomains();
     } catch (err) {
       setStatus(`❌ ${err.message || err}`);
     }
@@ -89,12 +126,13 @@ export default function ConnectWallet() {
       const tx = await contract.transferOwnership(newOwnerAddress);
       await tx.wait();
       setStatus(`✅ Contract ownership transferred to ${newOwnerAddress}`);
+      setOwner(newOwnerAddress);
     } catch (err) {
       setStatus(`❌ ${err.message || err}`);
     }
   };
 
-  // Owner Panel UI
+  // === Owner Panel ===
   const renderOwnerPanel = () => {
     let domainNameInput, whoisInput, newOwnerInput;
 
@@ -126,7 +164,8 @@ export default function ConnectWallet() {
     );
   };
 
-  const isOwner = owner && account && owner.toLowerCase() === account.toLowerCase();
+  const isOwner =
+    owner && account && owner.toLowerCase() === account.toLowerCase();
 
   return (
     <div>
@@ -144,6 +183,22 @@ export default function ConnectWallet() {
               </p>
             )
           )}
+
+          {/* Domain List */}
+          <div style={{ marginTop: "1rem" }}>
+            <h3>📜 Registered Domains</h3>
+            {domains.length > 0 ? (
+              <ul>
+                {domains.map((d) => (
+                  <li key={d.tokenId}>
+                    <strong>{d.domainName}</strong> — WHOIS: {d.whoisHash}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No domains found yet.</p>
+            )}
+          </div>
 
           {isOwner && renderOwnerPanel()}
         </>

@@ -4,6 +4,7 @@ import { CONTRACT_ABI, CONTRACT_ADDRESS } from "./contractInfo";
 
 const SEPOLIA_CHAIN_ID = "0xaa36a7"; // Sepolia
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const DEPLOY_BLOCK = 9103092; // Sepolia deployment block
 
 export default function ConnectWallet() {
   const [account, setAccount] = useState(null);
@@ -74,7 +75,7 @@ export default function ConnectWallet() {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
       const filter = contract.filters.Transfer(ZERO_ADDRESS, null);
-      const events = await contract.queryFilter(filter, 0, "latest");
+      const events = await contract.queryFilter(filter, DEPLOY_BLOCK, "latest");
 
       const domainList = [];
       for (let ev of events) {

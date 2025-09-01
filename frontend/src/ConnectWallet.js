@@ -15,6 +15,7 @@ export default function ConnectWallet() {
   const [status, setStatus] = useState("");
   const [domains, setDomains] = useState([]);
   const [whoisData, setWhoisData] = useState({}); // WHOIS info for each domain
+  const [refreshingDomain, setRefreshingDomain] = useState(null); // <-- جدید
 
   // === Connect Wallet ===
   const connectWallet = async () => {
@@ -63,7 +64,6 @@ export default function ConnectWallet() {
       const ownerAddress = await contract.owner();
       setOwner(ownerAddress);
 
-      // Fetch existing domains after connecting
       await fetchDomains();
     } catch (err) {
       console.error(err);
@@ -89,7 +89,6 @@ export default function ConnectWallet() {
 
       setDomains(domainList);
 
-      // Fetch WHOIS for each domain from backend
       for (const d of domainList) {
         const fullDomain = d.domainName.includes(".") ? d.domainName : `${d.domainName}.com`;
         console.log("Fetching WHOIS for:", fullDomain);
@@ -102,6 +101,20 @@ export default function ConnectWallet() {
     } catch (err) {
       console.error("Error fetching domains:", err);
       setError(`❌ ${err.message || err}`);
+    }
+  };
+
+  // === Refresh WHOIS for one domain ===
+  const refreshWhois = async (domain) => {
+    setRefreshingDomain(domain);
+    try {
+      const fullDomain = domain.includes(".") ? domain : `${domain}.com`;
+      const whois = await fetchWhois(fullDomain);
+      setWhoisData(prev => ({ ...prev, [domain]: whois }));
+    } catch (err) {
+      console.error("Error refreshing WHOIS for", domain, err);
+    } finally {
+      setRefreshingDomain(null);
     }
   };
 
@@ -200,6 +213,14 @@ export default function ConnectWallet() {
                   <li key={d.tokenId} style={{ marginBottom: "1rem" }}>
                     <strong>{d.domainName}</strong>
                     <WhoisCard data={whoisData[d.domainName]} />
+                    
+                    <button
+                      onClick={() => refreshWhois(d.domainName)}
+                      disabled={refreshingDomain === d.domainName}
+                      style={{ marginTop: "5px" }}
+                    >
+                      {refreshingDomain === d.domainName ? "Refreshing..." : "Refresh WHOIS"}
+                    </button>
                   </li>
                 ))}
               </ul>

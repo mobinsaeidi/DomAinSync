@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from "./contractInfo";
+import { fetchWhois } from "./utils/fetchWhois";
+import WhoisCard from "./components/WhoisCard";
 
 const SEPOLIA_CHAIN_ID = "0xaa36a7"; // Sepolia
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const DEPLOY_BLOCK = 9103092; // Sepolia deployment block
+const DEPLOY_BLOCK = 9103178; // Sepolia deployment block
 
 export default function ConnectWallet() {
   const [account, setAccount] = useState(null);
@@ -12,6 +14,7 @@ export default function ConnectWallet() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [domains, setDomains] = useState([]);
+  const [whoisData, setWhoisData] = useState({}); // WHOIS info for each domain
 
   // === Connect Wallet ===
   const connectWallet = async () => {
@@ -68,7 +71,7 @@ export default function ConnectWallet() {
     }
   };
 
-  // === Fetch Registered Domains ===
+  // === Fetch Registered Domains + WHOIS from backend ===
   const fetchDomains = async () => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -81,14 +84,21 @@ export default function ConnectWallet() {
       for (let ev of events) {
         const tokenId = ev.args.tokenId.toString();
         const domainName = await contract.getDomainByTokenId(tokenId);
-        const whoisHash = await contract.getWhoisHash(domainName);
-        domainList.push({
-          tokenId,
-          domainName,
-          whoisHash,
-        });
+        domainList.push({ tokenId, domainName });
       }
+
       setDomains(domainList);
+
+      // Fetch WHOIS for each domain from backend
+      for (const d of domainList) {
+        const fullDomain = d.domainName.includes(".") ? d.domainName : `${d.domainName}.com`;
+        console.log("Fetching WHOIS for:", fullDomain);
+
+        const data = await fetchWhois(fullDomain);
+        console.log("WHOIS Data for", fullDomain, ":", data);
+
+        setWhoisData(prev => ({ ...prev, [d.domainName]: data }));
+      }
     } catch (err) {
       console.error("Error fetching domains:", err);
       setError(`❌ ${err.message || err}`);
@@ -103,13 +113,12 @@ export default function ConnectWallet() {
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      const whoisHash = ethers.id(whoisData); // keccak256 hash of string
+      const whoisHash = ethers.id(whoisData);
 
       const tx = await contract.registerDomain(name, whoisHash);
       await tx.wait();
       setStatus(`✅ Domain "${name}" registered successfully!`);
 
-      // Refresh domain list
       await fetchDomains();
     } catch (err) {
       setStatus(`❌ ${err.message || err}`);
@@ -141,7 +150,6 @@ export default function ConnectWallet() {
       <div style={{ border: "1px solid #ccc", padding: "1rem", marginTop: "1rem" }}>
         <h3>🛠 Owner Control Panel</h3>
 
-        {/* Register New Domain */}
         <div style={{ marginBottom: "0.5rem" }}>
           <input placeholder="Domain Name" ref={(el) => (domainNameInput = el)} />
           <input placeholder="Whois Data (string)" ref={(el) => (whoisInput = el)} />
@@ -154,7 +162,6 @@ export default function ConnectWallet() {
           </button>
         </div>
 
-        {/* Transfer Ownership */}
         <div>
           <input placeholder="New Owner Address" ref={(el) => (newOwnerInput = el)} />
           <button onClick={() => transferContractOwnership(newOwnerInput.value)}>
@@ -185,14 +192,14 @@ export default function ConnectWallet() {
             )
           )}
 
-          {/* Domain List */}
           <div style={{ marginTop: "1rem" }}>
             <h3>📜 Registered Domains</h3>
             {domains.length > 0 ? (
-              <ul>
+              <ul style={{ listStyle: "none", padding: 0 }}>
                 {domains.map((d) => (
-                  <li key={d.tokenId}>
-                    <strong>{d.domainName}</strong> — WHOIS: {d.whoisHash}
+                  <li key={d.tokenId} style={{ marginBottom: "1rem" }}>
+                    <strong>{d.domainName}</strong>
+                    <WhoisCard data={whoisData[d.domainName]} />
                   </li>
                 ))}
               </ul>

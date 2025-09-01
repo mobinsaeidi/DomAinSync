@@ -1,33 +1,36 @@
 import React from "react";
 
-function WhoisCard({ data }) {
+function formatDate(dateString) {
+  if (!dateString) return null;
+  const cleaned = dateString.replace(/\+0000$/, "Z");
+  const date = new Date(cleaned);
+  return isNaN(date) ? null : date.toLocaleString();
+}
+
+export default function WhoisCard({ data }) {
   if (!data) return null;
 
-  const {
-    domainName,
-    registrar,
-    registrantCountry,
-    registryRegistrationExpirationDate,
-    updatedDate
-  } = data;
+ 
+  const expiry =
+    data.registryRegistrationExpirationDate ||
+    data.registryExpiryDate ||
+    data.expirationDate ||
+    data.registryExpDate ||
+    data.expires;
+
+  const updated =
+    data.updatedDate ||
+    data.registryUpdatedDate ||
+    data.lastUpdated ||
+    data.updated;
 
   return (
-    <div style={{
-      border: "1px solid #ddd",
-      borderRadius: "8px",
-      padding: "10px",
-      margin: "10px 0",
-      textAlign: "left",
-      background: "#f9f9f9"
-    }}>
-      <h3>WHOIS Info</h3>
-      <p><strong>Domain:</strong> {domainName}</p>
-      <p><strong>Registrar:</strong> {registrar}</p>
-      <p><strong>Country:</strong> {registrantCountry}</p>
-      <p><strong>Expiry Date:</strong> {new Date(registryRegistrationExpirationDate).toLocaleString()}</p>
-      <p><strong>Last Updated:</strong> {new Date(updatedDate).toLocaleString()}</p>
+    <div className="whois-card" style={{ border: "1px solid #ccc", padding: "10px", marginBottom: "10px" }}>
+      <p><strong>Domain:</strong> {data.domainName || "N/A"}</p>
+      <p><strong>Registrar:</strong> {data.registrar || "N/A"}</p>
+      <p><strong>Country:</strong> {data.registrantCountry || "N/A"}</p>
+      <p><strong>Expiry Date:</strong> {formatDate(expiry) || "N/A"}</p>
+      <p><strong>Last Updated:</strong> {formatDate(updated) || "N/A"}</p>
     </div>
   );
 }
-
-export default WhoisCard;

@@ -1,0 +1,55 @@
+[
+    {
+      "inputs": [
+        { "internalType": "string", "name": "domainName", "type": "string" },
+        { "internalType": "bytes32", "name": "whoisHash", "type": "bytes32" }
+      ],
+      "name": "registerDomain",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "string", "name": "domainName", "type": "string" }
+      ],
+      "name": "getWhoisHash",
+      "outputs": [
+        { "internalType": "bytes32", "name": "", "type": "bytes32" }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "tokenId", "type": "uint256" },
+        { "internalType": "bytes32", "name": "newWhoisHash", "type": "bytes32" }
+      ],
+      "name": "updateWhoisHash",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "tokenId", "type": "uint256" }
+      ],
+      "name": "getDomainByTokenId",
+      "outputs": [
+        { "internalType": "string", "name": "", "type": "string" }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+        { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+        { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" }
+      ],
+      "name": "Transfer",
+      "type": "event"
+    }
+  ]
+  

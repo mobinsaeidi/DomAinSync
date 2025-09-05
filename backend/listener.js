@@ -6,30 +6,27 @@ import { fileURLToPath } from "url";
 import path from "path";
 import { WebSocketServer } from "ws";
 
-// ساپورت مسیر ESM
+// ===== تنظیمات =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// بارگذاری env
 dotenv.config({ path: path.join(__dirname, "../.env") });
+
 const { SEPOLIA_WS_URL, CONTRACT_ADDRESS } = process.env;
 if (!SEPOLIA_WS_URL || !CONTRACT_ADDRESS) {
-  throw new Error("❌ SEPOLIA_WS_URL یا CONTRACT_ADDRESS در .env تنظیم نشده است");
+  throw new Error("❌ SEPOLIA_WS_URL یا CONTRACT_ADDRESS در .env تنظیم نشده");
 }
 
-// خواندن ABI
+// ===== ABI و Provider =====
 const abiPath = path.join(__dirname, "DomainDualIdentityABI.json");
 const abi = JSON.parse(readFileSync(abiPath, "utf8"));
 
-// اتصال WebSocket Provider
 const provider = new ethers.WebSocketProvider(SEPOLIA_WS_URL);
-console.log("🌐 Connected to Sepolia via WebSocket");
+console.log("🌐 Connected to Sepolia WebSocket");
 
-// ساخت اینستنس کانترکت
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// WebSocket Server برای ارسال رویداد به فرانت‌اند
+// ===== WebSocket Server برای فرانت =====
 const wss = new WebSocketServer({ port: 4001 });
 wss.on("connection", () => console.log("📡 Frontend connected"));
 const broadcast = (data) => {
@@ -39,10 +36,45 @@ const broadcast = (data) => {
   });
 };
 
-// گرفتن events در بازه ۱۰ بلاک آخر برای پلن رایگان
+// ===== گرفتن بلاک با سه روش =====
+async function getBlockDetailsFromEvent(event) {
+  try {
+    // 1️⃣ از event.log
+    if (event?.log?.blockNumber) {
+      const block = await provider.getBlock(event.log.blockNumber);
+      return { blockNum: event.log.blockNumber, timestamp: block?.timestamp ?? null };
+    }
+
+    // 2️⃣ از getTransaction
+    if (event?.transactionHash) {
+      const tx = await provider.getTransaction(event.transactionHash);
+      if (tx?.blockNumber) {
+        const block = await provider.getBlock(tx.blockNumber);
+        return { blockNum: tx.blockNumber, timestamp: block?.timestamp ?? null };
+      }
+    }
+
+    // 3️⃣ از getTransactionReceipt
+    if (event?.transactionHash) {
+      const receipt = await provider.getTransactionReceipt(event.transactionHash);
+      if (receipt?.blockNumber) {
+        const block = await provider.getBlock(receipt.blockNumber);
+        return { blockNum: receipt.blockNumber, timestamp: block?.timestamp ?? null };
+      }
+    }
+
+    return { blockNum: null, timestamp: null };
+
+  } catch (err) {
+    console.warn(`⚠️ Block fetch failed: ${err.message}`);
+    return { blockNum: null, timestamp: null };
+  }
+}
+
+// ===== History =====
 async function sendHistory() {
   const latestBlock = await provider.getBlockNumber();
-  const fromBlock = Math.max(latestBlock - 9, 0);
+  const fromBlock = Math.max(latestBlock - 9, 0); // محدودیت پلن رایگان
   console.log(`📜 Fetching history: blocks ${fromBlock} → ${latestBlock}`);
 
   try {
@@ -56,14 +88,14 @@ async function sendHistory() {
   }
 }
 
-// گوش دادن به رویدادهای زنده
+// ===== Live =====
 function listenLive() {
   contract.on("Transfer", async (from, to, tokenId, event) => {
     await processEvent(from, to, tokenId, event, true);
   });
 }
 
-// پردازش هر رویداد
+// ===== پردازش رویداد =====
 async function processEvent(from, to, tokenId, event, isLive) {
   let domainName = "";
   try {
@@ -73,29 +105,16 @@ async function processEvent(from, to, tokenId, event, isLive) {
   }
 
   const isMint = from.toLowerCase() === ZERO_ADDRESS.toLowerCase();
+  const { blockNum, timestamp } = await getBlockDetailsFromEvent(event);
 
-  // گرفتن بلاک‌نامبر امن
-  const blockNum = event.blockNumber ?? event.log?.blockNumber;
-  let timestamp = null;
-  try {
-    const block = await provider.getBlock(blockNum);
-    timestamp = block.timestamp;
-  } catch (err) {
-    console.warn(`⚠️ Could not fetch block ${blockNum}: ${err.message}`);
-  }
-
-  // لاگ در کنسول
-  console.log(`\n[${isLive ? "LIVE" : "HISTORY"}] Block #${blockNum}`);
+  console.log(`\n[${isLive ? "LIVE" : "HISTORY"}] Block #${blockNum ?? "?"}`);
   console.log(`  From: ${from}`);
   console.log(`  To:   ${to}`);
   console.log(`  Token: ${tokenId.toString()}`);
   console.log(`  Domain: ${domainName}`);
   console.log(`  Mint event: ${isMint}`);
-  if (timestamp) {
-    console.log(`  Time: ${new Date(timestamp * 1000).toISOString()}`);
-  }
+  if (timestamp) console.log(`  Time: ${new Date(timestamp * 1000).toISOString()}`);
 
-  // ارسال به فرانت
   broadcast({
     from,
     to,
@@ -108,7 +127,7 @@ async function processEvent(from, to, tokenId, event, isLive) {
   });
 }
 
-// شروع Listener
+// ===== شروع =====
 await sendHistory();
 listenLive();
 console.log("🚀 Listener running (history + live mode)");

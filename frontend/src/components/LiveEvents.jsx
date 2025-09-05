@@ -1,52 +1,78 @@
-import React, { useEffect, useState } from 'react';
+import React from "react";
 
-export default function LiveEvents() {
-  const [events, setEvents] = useState([]);
-  const [initialLoadTime] = useState(Date.now());
-
-  useEffect(() => {
-    const ws = new WebSocket('ws://localhost:4001');
-
-    ws.onmessage = (msg) => {
-      try {
-        const eventData = JSON.parse(msg.data);
-
-        // تعیین نوع رویداد بر اساس زمان
-        const type = Date.now() - initialLoadTime < 5000 ? 'history' : 'live';
-
-        setEvents(prev => [
-          { ...eventData, type },
-          ...prev
-        ]);
-      } catch (err) {
-        console.error('Error parsing WS message:', err);
-      }
-    };
-
-    return () => ws.close();
-  }, [initialLoadTime]);
+export default function LiveEvents({ events }) {
+  if (!events || events.length === 0) {
+    return <p>No blockchain events yet...</p>;
+  }
 
   return (
-    <div style={{border: '1px solid #ccc', padding: '1rem', marginTop: '1rem'}}>
-      <h3>📡 Blockchain Events</h3>
-      {events.length === 0 && <p>No events yet...</p>}
-      <ul>
-        {events.map((ev, i) => (
+    <div className="live-events">
+      <h2>
+        <span style={{ color: "#8B0000", fontWeight: "bold" }}>[LIVE]</span>{" "}
+        Blockchain Events
+      </h2>
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {events.map((event, idx) => (
           <li
-            key={i}
+            key={idx}
             style={{
-              color: ev.type === 'history' ? '#888' : '#0f0', // خاکستری برای history، سبز برای live
-              fontWeight: ev.type === 'live' ? 'bold' : 'normal',
-              marginBottom: '0.5rem'
+              border: "1px solid #ccc",
+              padding: "10px",
+              marginBottom: "8px",
+              borderRadius: "6px",
+              backgroundColor: "#fff",
+              color: "#000", // متن پیش‌فرض مشکی
             }}
           >
-            [{ev.type.toUpperCase()}] <strong>{ev.domainName}</strong> — Token #{ev.tokenId}
-            <br/>
-            From: {ev.from}
-            <br/>
-            To: {ev.to}
-            <br/>
-            Block: {ev.blockNumber}
+            <div style={{ marginBottom: "4px" }}>
+              <strong>Type:</strong>{" "}
+              {event.isMint ? (
+                <span style={{ color: "#8B0000" }}>Domain Registration</span>
+              ) : (
+                <span>Transfer</span>
+              )}
+            </div>
+
+            {/* Token ID */}
+            <div>
+              <strong>Token ID:</strong>{" "}
+              <span style={{ color: "#8B0000", fontWeight: "bold" }}>
+                {event.tokenId}
+              </span>
+            </div>
+
+            {/* Domain Name */}
+            {event.domainName && (
+              <div>
+                <strong>Domain Name:</strong>{" "}
+                <span style={{ color: "#8B0000", fontWeight: "bold" }}>
+                  {event.domainName}
+                </span>
+              </div>
+            )}
+
+            <div>
+              <strong>From:</strong> <span>{event.from}</span>
+            </div>
+            <div>
+              <strong>To:</strong> <span>{event.to}</span>
+            </div>
+
+            {/* Block */}
+            <div>
+              <strong>Block:</strong>{" "}
+              <span
+                style={{
+                  backgroundColor: "#8B0000",
+                  color: "#fff",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  fontWeight: "bold",
+                }}
+              >
+                {event.blockNumber}
+              </span>
+            </div>
           </li>
         ))}
       </ul>

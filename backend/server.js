@@ -1,10 +1,9 @@
-const express = require('express');
-const cors = require('cors');
-const whois = require('whois-json');
+import express from 'express';
+import cors from 'cors';
+import whois from 'whois-json';
 
 const app = express();
 app.use(cors());
-
 
 app.get('/whois/:domain', async (req, res) => {
   const domain = req.params.domain;

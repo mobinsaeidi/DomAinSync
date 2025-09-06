@@ -74,12 +74,12 @@ async function getBlockDetailsFromEvent(event) {
 // ===== History =====
 async function sendHistory() {
   const latestBlock = await provider.getBlockNumber();
-  const fromBlock = Math.max(latestBlock - 9, 0); // محدودیت پلن رایگان
+  const fromBlock = Math.max(latestBlock - 2000, 0); 
   console.log(`📜 Fetching history: blocks ${fromBlock} → ${latestBlock}`);
 
   try {
     const events = await contract.queryFilter("Transfer", fromBlock, latestBlock);
-    console.log(`📜 Found ${events.length} historical events`);
+    console.log(`📜 Found ${events.length} historical سevents`);
     for (const ev of events) {
       await processEvent(ev.args[0], ev.args[1], ev.args[2], ev, false);
     }

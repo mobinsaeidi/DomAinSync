@@ -6,7 +6,7 @@ import WhoisCard from "./components/WhoisCard";
 
 const SEPOLIA_CHAIN_ID = "0xaa36a7"; // Sepolia
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const DEPLOY_BLOCK = 9103178; // Sepolia deployment block
+const DEPLOY_BLOCK = 9145927; // Sepolia deployment block
 
 export default function ConnectWallet() {
   const [account, setAccount] = useState(null);

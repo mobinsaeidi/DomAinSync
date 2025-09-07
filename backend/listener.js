@@ -4,17 +4,16 @@ import path from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { autoListDomain } from "./services/domaService.js";
-import { sendTelegramMessage } from "./services/telegramService.js"; 
+import { sendTelegramMessage } from "./services/telegramService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
 dotenv.config({ path: path.join(__dirname, "../.env") });
+
 const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const DEPLOY_BLOCK = parseInt(process.env.DEPLOY_BLOCK, 10);
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const abiPath = path.join(__dirname, "DomainDualIdentityABI.json");
 const abi = JSON.parse(readFileSync(abiPath, "utf8"));
@@ -23,6 +22,7 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
 
 let lastCheckedBlock = DEPLOY_BLOCK;
+
 
 async function debugAllLogs() {
   console.log(`🔍 Fetching ALL logs from block ${DEPLOY_BLOCK} in chunks...`);
@@ -58,21 +58,23 @@ async function getDomainName(tokenId) {
 
 
 async function processTransfer(event, label = "Transfer") {
-  const [from, to, tokenIdBN] = event.args;
-  const tokenId = tokenIdBN.toString();
-  const domainName = await getDomainName(tokenId);
+  try {
+    const [from, to, tokenIdBN] = event.args;
+    const tokenId = tokenIdBN.toString();
+    const domainName = await getDomainName(tokenId);
 
-  console.log(
-    `${label} → ${domainName} | from: ${from} to: ${to} tokenId: ${tokenId} (Block ${event.blockNumber})`
-  );
+    console.log(
+      `${label} → ${domainName} | from: ${from} to: ${to} tokenId: ${tokenId} (Block ${event.blockNumber})`
+    );
 
-  if (domainName !== "(domain not found)") {
-   
-    await autoListDomain(CONTRACT_ADDRESS, tokenId, to, domainName);
+    if (domainName !== "(domain not found)") {
+      await autoListDomain(CONTRACT_ADDRESS, tokenId, to, domainName);
 
-    
-    const message = `Domain listed: ${domainName}\nToken ID: ${tokenId}\nNew Owner: ${to}`;
-    await sendTelegramMessage(TELEGRAM_CHAT_ID, message);
+      const message = `Domain listed on Doma\n🌐 ${domainName}\n🆔 Token ID: ${tokenId}\n👤 New Owner: ${to}`;
+      await sendTelegramMessage(message);
+    }
+  } catch (err) {
+    console.error(`Error in ${label}:`, err);
   }
 }
 
@@ -84,12 +86,13 @@ async function fetchPastEvents() {
     const events = await contract.queryFilter("Transfer", DEPLOY_BLOCK, latestBlock);
 
     if (events.length === 0) {
-      console.warn("No Transfer events found in this range.");
+      console.warn("⚠ No Transfer events found in this range.");
     } else {
       for (let i = 0; i < events.length; i++) {
         await processTransfer(events[i], `#${i + 1} Past Transfer`);
       }
     }
+
     lastCheckedBlock = latestBlock + 1;
     console.log(`Past events fetched. Now listening for new events...`);
   } catch (err) {
@@ -112,7 +115,6 @@ async function pollEvents() {
     console.error("Error polling events:", err);
   }
 }
-
 
 await debugAllLogs();
 await fetchPastEvents();

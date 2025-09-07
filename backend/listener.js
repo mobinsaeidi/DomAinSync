@@ -1,19 +1,20 @@
-// backend/listener.js - debug mode + domain names + auto-listing
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import path from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { autoListDomain } from "./services/domaService.js";
+import { sendTelegramMessage } from "./services/telegramService.js"; 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// env vars
+
 dotenv.config({ path: path.join(__dirname, "../.env") });
 const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
-const DEPLOY_BLOCK = parseInt(process.env.DEPLOY_BLOCK, 10, 10);
+const DEPLOY_BLOCK = parseInt(process.env.DEPLOY_BLOCK, 10);
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const abiPath = path.join(__dirname, "DomainDualIdentityABI.json");
 const abi = JSON.parse(readFileSync(abiPath, "utf8"));
@@ -23,7 +24,6 @@ const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
 
 let lastCheckedBlock = DEPLOY_BLOCK;
 
-// 📌 مرحله ۱: بررسی همهٔ لاگ‌ها برای دیباگ
 async function debugAllLogs() {
   console.log(`🔍 Fetching ALL logs from block ${DEPLOY_BLOCK} in chunks...`);
   const latestBlock = await provider.getBlockNumber();
@@ -44,10 +44,10 @@ async function debugAllLogs() {
 
     fromBlock = toBlock + 1;
   }
-  console.log(`✅ Finished. Total logs found: ${logCount}`);
+  console.log(`Finished. Total logs found: ${logCount}`);
 }
 
-// 📌 گرفتن اسم دامنه از tokenId
+
 async function getDomainName(tokenId) {
   try {
     return await contract.getDomainByTokenId(tokenId);
@@ -56,7 +56,7 @@ async function getDomainName(tokenId) {
   }
 }
 
-// 📌 پردازش رویداد + Auto-Listing
+
 async function processTransfer(event, label = "Transfer") {
   const [from, to, tokenIdBN] = event.args;
   const tokenId = tokenIdBN.toString();
@@ -66,13 +66,17 @@ async function processTransfer(event, label = "Transfer") {
     `${label} → ${domainName} | from: ${from} to: ${to} tokenId: ${tokenId} (Block ${event.blockNumber})`
   );
 
-  // Auto-list دامنه اگر پیدا شد
   if (domainName !== "(domain not found)") {
+   
     await autoListDomain(CONTRACT_ADDRESS, tokenId, to, domainName);
+
+    
+    const message = `Domain listed: ${domainName}\nToken ID: ${tokenId}\nNew Owner: ${to}`;
+    await sendTelegramMessage(TELEGRAM_CHAT_ID, message);
   }
 }
 
-// 📌 مرحله ۲: واکشی رویدادهای گذشته
+
 async function fetchPastEvents() {
   console.log(`📜 Fetching past Transfer events from block ${DEPLOY_BLOCK}...`);
   try {
@@ -80,36 +84,36 @@ async function fetchPastEvents() {
     const events = await contract.queryFilter("Transfer", DEPLOY_BLOCK, latestBlock);
 
     if (events.length === 0) {
-      console.warn("⚠ No Transfer events found in this range.");
+      console.warn("No Transfer events found in this range.");
     } else {
       for (let i = 0; i < events.length; i++) {
         await processTransfer(events[i], `#${i + 1} Past Transfer`);
       }
     }
     lastCheckedBlock = latestBlock + 1;
-    console.log(`✅ Past events fetched. Now listening for new events...`);
+    console.log(`Past events fetched. Now listening for new events...`);
   } catch (err) {
-    console.error("❌ Error fetching past events:", err);
+    console.error("Error fetching past events:", err);
   }
 }
 
-// 📌 مرحله ۳: پایش رویدادهای جدید
+
 async function pollEvents() {
   try {
     const latestBlock = await provider.getBlockNumber();
     if (latestBlock >= lastCheckedBlock) {
       const events = await contract.queryFilter("Transfer", lastCheckedBlock, latestBlock);
       for (const event of events) {
-        await processTransfer(event, "📦 New Transfer");
+        await processTransfer(event, "New Transfer");
       }
       lastCheckedBlock = latestBlock + 1;
     }
   } catch (err) {
-    console.error("❌ Error polling events:", err);
+    console.error("Error polling events:", err);
   }
 }
 
-// اجرای مراحل
+
 await debugAllLogs();
 await fetchPastEvents();
 setInterval(pollEvents, 1500);

@@ -1,133 +1,115 @@
-// backend/listener.js
+// backend/listener.js - debug mode + domain names + auto-listing
 import { ethers } from "ethers";
 import dotenv from "dotenv";
+import path from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
-import path from "path";
-import { WebSocketServer } from "ws";
+import { autoListDomain } from "./services/domaService.js";
 
-// ===== تنظیمات =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// env vars
 dotenv.config({ path: path.join(__dirname, "../.env") });
+const RPC_URL = process.env.RPC_URL;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const DEPLOY_BLOCK = parseInt(process.env.DEPLOY_BLOCK, 10, 10);
 
-const { SEPOLIA_WS_URL, CONTRACT_ADDRESS } = process.env;
-if (!SEPOLIA_WS_URL || !CONTRACT_ADDRESS) {
-  throw new Error("❌ SEPOLIA_WS_URL یا CONTRACT_ADDRESS در .env تنظیم نشده");
-}
-
-// ===== ABI و Provider =====
 const abiPath = path.join(__dirname, "DomainDualIdentityABI.json");
 const abi = JSON.parse(readFileSync(abiPath, "utf8"));
 
-const provider = new ethers.WebSocketProvider(SEPOLIA_WS_URL);
-console.log("🌐 Connected to Sepolia WebSocket");
-
+const provider = new ethers.JsonRpcProvider(RPC_URL);
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// ===== WebSocket Server برای فرانت =====
-const wss = new WebSocketServer({ port: 4001 });
-wss.on("connection", () => console.log("📡 Frontend connected"));
-const broadcast = (data) => {
-  const json = JSON.stringify(data);
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1) client.send(json);
-  });
-};
+let lastCheckedBlock = DEPLOY_BLOCK;
 
-// ===== گرفتن بلاک با سه روش =====
-async function getBlockDetailsFromEvent(event) {
-  try {
-    // 1️⃣ از event.log
-    if (event?.log?.blockNumber) {
-      const block = await provider.getBlock(event.log.blockNumber);
-      return { blockNum: event.log.blockNumber, timestamp: block?.timestamp ?? null };
-    }
-
-    // 2️⃣ از getTransaction
-    if (event?.transactionHash) {
-      const tx = await provider.getTransaction(event.transactionHash);
-      if (tx?.blockNumber) {
-        const block = await provider.getBlock(tx.blockNumber);
-        return { blockNum: tx.blockNumber, timestamp: block?.timestamp ?? null };
-      }
-    }
-
-    // 3️⃣ از getTransactionReceipt
-    if (event?.transactionHash) {
-      const receipt = await provider.getTransactionReceipt(event.transactionHash);
-      if (receipt?.blockNumber) {
-        const block = await provider.getBlock(receipt.blockNumber);
-        return { blockNum: receipt.blockNumber, timestamp: block?.timestamp ?? null };
-      }
-    }
-
-    return { blockNum: null, timestamp: null };
-
-  } catch (err) {
-    console.warn(`⚠️ Block fetch failed: ${err.message}`);
-    return { blockNum: null, timestamp: null };
-  }
-}
-
-// ===== History =====
-async function sendHistory() {
+// 📌 مرحله ۱: بررسی همهٔ لاگ‌ها برای دیباگ
+async function debugAllLogs() {
+  console.log(`🔍 Fetching ALL logs from block ${DEPLOY_BLOCK} in chunks...`);
   const latestBlock = await provider.getBlockNumber();
-  const fromBlock = Math.max(latestBlock - 2000, 0); 
-  console.log(`📜 Fetching history: blocks ${fromBlock} → ${latestBlock}`);
+  const chunkSize = 2000;
+  let fromBlock = DEPLOY_BLOCK;
+  let logCount = 0;
 
+  while (fromBlock <= latestBlock) {
+    const toBlock = Math.min(fromBlock + chunkSize - 1, latestBlock);
+    const logs = await provider.getLogs({ fromBlock, toBlock });
+
+    logs.forEach((log, idx) => {
+      console.log(
+        `[${fromBlock}-${toBlock}] #${idx + 1}: address=${log.address}, topics=${log.topics}`
+      );
+      logCount++;
+    });
+
+    fromBlock = toBlock + 1;
+  }
+  console.log(`✅ Finished. Total logs found: ${logCount}`);
+}
+
+// 📌 گرفتن اسم دامنه از tokenId
+async function getDomainName(tokenId) {
   try {
-    const events = await contract.queryFilter("Transfer", fromBlock, latestBlock);
-    console.log(`📜 Found ${events.length} historical سevents`);
-    for (const ev of events) {
-      await processEvent(ev.args[0], ev.args[1], ev.args[2], ev, false);
+    return await contract.getDomainByTokenId(tokenId);
+  } catch {
+    return "(domain not found)";
+  }
+}
+
+// 📌 پردازش رویداد + Auto-Listing
+async function processTransfer(event, label = "Transfer") {
+  const [from, to, tokenIdBN] = event.args;
+  const tokenId = tokenIdBN.toString();
+  const domainName = await getDomainName(tokenId);
+
+  console.log(
+    `${label} → ${domainName} | from: ${from} to: ${to} tokenId: ${tokenId} (Block ${event.blockNumber})`
+  );
+
+  // Auto-list دامنه اگر پیدا شد
+  if (domainName !== "(domain not found)") {
+    await autoListDomain(CONTRACT_ADDRESS, tokenId, to, domainName);
+  }
+}
+
+// 📌 مرحله ۲: واکشی رویدادهای گذشته
+async function fetchPastEvents() {
+  console.log(`📜 Fetching past Transfer events from block ${DEPLOY_BLOCK}...`);
+  try {
+    const latestBlock = await provider.getBlockNumber();
+    const events = await contract.queryFilter("Transfer", DEPLOY_BLOCK, latestBlock);
+
+    if (events.length === 0) {
+      console.warn("⚠ No Transfer events found in this range.");
+    } else {
+      for (let i = 0; i < events.length; i++) {
+        await processTransfer(events[i], `#${i + 1} Past Transfer`);
+      }
+    }
+    lastCheckedBlock = latestBlock + 1;
+    console.log(`✅ Past events fetched. Now listening for new events...`);
+  } catch (err) {
+    console.error("❌ Error fetching past events:", err);
+  }
+}
+
+// 📌 مرحله ۳: پایش رویدادهای جدید
+async function pollEvents() {
+  try {
+    const latestBlock = await provider.getBlockNumber();
+    if (latestBlock >= lastCheckedBlock) {
+      const events = await contract.queryFilter("Transfer", lastCheckedBlock, latestBlock);
+      for (const event of events) {
+        await processTransfer(event, "📦 New Transfer");
+      }
+      lastCheckedBlock = latestBlock + 1;
     }
   } catch (err) {
-    console.error("❌ History fetch error:", err.message);
+    console.error("❌ Error polling events:", err);
   }
 }
 
-// ===== Live =====
-function listenLive() {
-  contract.on("Transfer", async (from, to, tokenId, event) => {
-    await processEvent(from, to, tokenId, event, true);
-  });
-}
-
-// ===== پردازش رویداد =====
-async function processEvent(from, to, tokenId, event, isLive) {
-  let domainName = "";
-  try {
-    domainName = await contract.getDomainByTokenId(tokenId);
-  } catch (err) {
-    console.warn(`⚠️ Domain fetch failed for token ${tokenId}: ${err.message}`);
-  }
-
-  const isMint = from.toLowerCase() === ZERO_ADDRESS.toLowerCase();
-  const { blockNum, timestamp } = await getBlockDetailsFromEvent(event);
-
-  console.log(`\n[${isLive ? "LIVE" : "HISTORY"}] Block #${blockNum ?? "?"}`);
-  console.log(`  From: ${from}`);
-  console.log(`  To:   ${to}`);
-  console.log(`  Token: ${tokenId.toString()}`);
-  console.log(`  Domain: ${domainName}`);
-  console.log(`  Mint event: ${isMint}`);
-  if (timestamp) console.log(`  Time: ${new Date(timestamp * 1000).toISOString()}`);
-
-  broadcast({
-    from,
-    to,
-    tokenId: tokenId.toString(),
-    blockNumber: blockNum,
-    timestamp,
-    domainName,
-    isMint,
-    isLive
-  });
-}
-
-// ===== شروع =====
-await sendHistory();
-listenLive();
-console.log("🚀 Listener running (history + live mode)");
+// اجرای مراحل
+await debugAllLogs();
+await fetchPastEvents();
+setInterval(pollEvents, 1500);

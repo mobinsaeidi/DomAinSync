@@ -80,13 +80,13 @@ async function processTransfer(event, label = "Transfer") {
 
 
 async function fetchPastEvents() {
-  console.log(`📜 Fetching past Transfer events from block ${DEPLOY_BLOCK}...`);
+  console.log(`Fetching past Transfer events from block ${DEPLOY_BLOCK}...`);
   try {
     const latestBlock = await provider.getBlockNumber();
     const events = await contract.queryFilter("Transfer", DEPLOY_BLOCK, latestBlock);
 
     if (events.length === 0) {
-      console.warn("⚠ No Transfer events found in this range.");
+      console.warn("No Transfer events found in this range.");
     } else {
       for (let i = 0; i < events.length; i++) {
         await processTransfer(events[i], `#${i + 1} Past Transfer`);

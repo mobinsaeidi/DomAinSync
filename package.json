@@ -70,6 +70,8 @@
     "chokidar": "^4.0.3",
     "ci-info": "^2.0.0",
     "cipher-base": "^1.0.6",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
     "clean-stack": "^2.2.0",
     "cli-boxes": "^2.2.1",
     "cli-table3": "^0.6.5",

@@ -23,30 +23,49 @@ const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
 
 let lastCheckedBlock = DEPLOY_BLOCK;
 
-
+// --- نسخه ضد محدودیت ---
 async function debugAllLogs() {
   console.log(`🔍 Fetching ALL logs from block ${DEPLOY_BLOCK} in chunks...`);
   const latestBlock = await provider.getBlockNumber();
-  const chunkSize = 2000;
   let fromBlock = DEPLOY_BLOCK;
+  let chunkSize = 2000;
   let logCount = 0;
 
   while (fromBlock <= latestBlock) {
     const toBlock = Math.min(fromBlock + chunkSize - 1, latestBlock);
-    const logs = await provider.getLogs({ fromBlock, toBlock });
+    console.log(`[${fromBlock}-${toBlock}] fetching logs (chunkSize=${chunkSize})...`);
 
-    logs.forEach((log, idx) => {
-      console.log(
-        `[${fromBlock}-${toBlock}] #${idx + 1}: address=${log.address}, topics=${log.topics}`
-      );
-      logCount++;
-    });
+    try {
+      const logs = await provider.getLogs({ fromBlock, toBlock });
 
-    fromBlock = toBlock + 1;
+      logs.forEach((log, idx) => {
+        console.log(
+          `[${fromBlock}-${toBlock}] #${idx + 1}: address=${log.address}, topics=${log.topics}`
+        );
+        logCount++;
+      });
+
+      fromBlock = toBlock + 1;
+
+      // هوشمند کردن chunkSize
+      if (logs.length >= 1000 && chunkSize > 1) {
+        chunkSize = Math.max(1, Math.floor(chunkSize / 2));
+      } else if (logs.length < 900 && chunkSize < 5000) {
+        chunkSize = Math.min(chunkSize * 2, 5000);
+      }
+
+    } catch (err) {
+      if (err.error && (err.error.code === -32005 || err.code === "SERVER_ERROR")) {
+        chunkSize = Math.max(1, Math.floor(chunkSize / 2));
+        console.warn(`Too many logs, reducing chunkSize to ${chunkSize}...`);
+      } else {
+        console.error(`Error from ${fromBlock} to ${toBlock}:`, err);
+        throw err;
+      }
+    }
   }
   console.log(`Finished. Total logs found: ${logCount}`);
 }
-
 
 async function getDomainName(tokenId) {
   try {
@@ -55,7 +74,6 @@ async function getDomainName(tokenId) {
     return "(domain not found)";
   }
 }
-
 
 async function processTransfer(event, label = "Transfer") {
   try {
@@ -69,7 +87,6 @@ async function processTransfer(event, label = "Transfer") {
 
     if (domainName !== "(domain not found)") {
       await autoListDomain(CONTRACT_ADDRESS, tokenId, to, domainName);
-
       const message = `Domain listed on Doma\n🌐 ${domainName}\n🆔 Token ID: ${tokenId}\n👤 New Owner: ${to}`;
       await sendTelegramMessage(message);
     }
@@ -77,7 +94,6 @@ async function processTransfer(event, label = "Transfer") {
     console.error(`Error in ${label}:`, err);
   }
 }
-
 
 async function fetchPastEvents() {
   console.log(`Fetching past Transfer events from block ${DEPLOY_BLOCK}...`);
@@ -99,7 +115,6 @@ async function fetchPastEvents() {
     console.error("Error fetching past events:", err);
   }
 }
-
 
 async function pollEvents() {
   try {

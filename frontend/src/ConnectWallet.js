@@ -86,7 +86,6 @@ export default function ConnectWallet() {
       }
       setDomains(domainList);
 
-      // Fetch WHOIS data for each domain
       for (const d of domainList) {
         try {
           const fullDomain = d.domainName.includes(".") ? d.domainName : `${d.domainName}.com`;
@@ -97,17 +96,14 @@ export default function ConnectWallet() {
         }
       }
 
-      // Check which domains are listed for sale
       await checkDomainListings(domainList);
     } catch (err) {
       setError(`❌ Error fetching domains: ${err.message}`);
     }
   };
 
-  // Check domain listings
   const checkDomainListings = async (domainList) => {
     if (!isValidMarketplaceAddress()) return;
-
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, provider);
@@ -134,7 +130,6 @@ export default function ConnectWallet() {
     }
   };
 
-  // Refresh WHOIS
   const refreshWhois = async (domain) => {
     setRefreshingDomain(domain);
     try {
@@ -148,19 +143,16 @@ export default function ConnectWallet() {
     }
   };
 
-  // Register
   const handleRegister = async () => {
     if (!newDomainName.trim()) {
       setStatus("❌ Please enter a domain name.");
       return;
     }
-
     try {
       if (/^\d+(\.\d+)?$/.test(newDomainName.trim().toLowerCase()) || newDomainName.trim().toLowerCase() === "open") {
         setStatus("❌ Invalid domain name for registration.");
         return;
       }
-      
       setStatus("⏳ Sending transaction...");
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
@@ -179,19 +171,16 @@ export default function ConnectWallet() {
     }
   };
 
-  // List domain for sale
   const listDomainForSale = async (tokenId, domainName, price) => {
     try {
       if (!isValidMarketplaceAddress()) {
         setStatus("❌ Marketplace contract address is not configured properly.");
         return;
       }
-
       if (!price || isNaN(price) || parseFloat(price) <= 0) {
         setStatus("❌ Please enter a valid price.");
         return;
       }
-
       setStatus(`⏳ Listing "${domainName}" for sale...`);
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
@@ -199,18 +188,14 @@ export default function ConnectWallet() {
       const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, signer);
       const priceInWei = ethers.parseEther(price.toString());
 
-      // First approve the marketplace to transfer the domain
       const domainContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       const approveTx = await domainContract.approve(MARKETPLACE_CONTRACT_ADDRESS, tokenId);
       await approveTx.wait();
 
-      // Then list the domain
       const listTx = await market.listDomain(tokenId, priceInWei);
       await listTx.wait();
 
       setStatus(`✅ Domain "${domainName}" listed for sale successfully!`);
-      
-      // Update the listing status immediately
       setDomainListings(prev => ({ ...prev, [tokenId]: true }));
       setSellPrices(prev => ({ ...prev, [tokenId]: price }));
     } catch (err) {
@@ -218,101 +203,77 @@ export default function ConnectWallet() {
     }
   };
 
-  // Buy domain from marketplace
   const buyDomain = async (tokenId, domainName, price) => {
     try {
       if (!isValidMarketplaceAddress()) {
         setStatus("❌ Marketplace contract address is not configured properly.");
         return;
       }
-
       setStatus(`⏳ Buying "${domainName}" (ID: ${tokenId})...`);
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
       const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, signer);
 
-      // Get listing details
       const listing = await market.listings(tokenId);
       if (listing.seller === ZERO_ADDRESS) {
         setStatus(`❌ Domain "${domainName}" is not for sale.`);
         return;
       }
-
       const priceWei = listing.price;
-      const tx = await market.buyDomain(tokenId, {
-        value: priceWei
-      });
+      const tx = await market.buyDomain(tokenId, { value: priceWei });
       await tx.wait();
 
       setStatus(`✅ Domain "${domainName}" purchased successfully!`);
-      
-      // Add to sold domains list
       setSoldDomains(prev => [...prev, {
         domainName,
         tokenId,
         price: price || ethers.formatEther(priceWei),
         soldAt: new Date().toLocaleString()
       }]);
-      
-      // Update the listing status immediately
       setDomainListings(prev => ({ ...prev, [tokenId]: false }));
       setSellPrices(prev => {
         const newPrices = { ...prev };
         delete newPrices[tokenId];
         return newPrices;
       });
-
       await fetchDomains();
     } catch (err) {
       setStatus(`❌ ${err.reason || err.message || "Unknown error during purchase"}`);
     }
   };
 
-  // Transfer ownership
   const handleTransferOwnership = async () => {
     if (!newOwnerAddress.trim()) {
       setStatus("❌ Please enter an Ethereum address.");
       return;
     }
-
     if (!ethers.isAddress(newOwnerAddress)) {
       setStatus("❌ Please enter a valid Ethereum address.");
       return;
     }
-
-    // Check if the new owner address is the same as current owner
     if (newOwnerAddress.toLowerCase() === owner?.toLowerCase()) {
       setStatus("❌ New owner address is the same as current owner.");
       return;
     }
-
-    // Check if the caller is the current owner
     if (owner?.toLowerCase() !== account?.toLowerCase()) {
       setStatus("❌ Only the current contract owner can transfer ownership.");
       return;
     }
-
     try {
       setStatus("⏳ Sending transaction...");
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-
-      // Verify ownership again before transferring
       const currentOwner = await contract.owner();
       if (currentOwner.toLowerCase() !== account.toLowerCase()) {
         setStatus("❌ You are not the contract owner.");
         return;
       }
-
       const tx = await contract.transferOwnership(newOwnerAddress);
       await tx.wait();
-      
-      // Verify the transfer was successful
       const newOwner = await contract.owner();
       setOwner(newOwner);
-
       setStatus(`✅ Contract ownership transferred to ${newOwnerAddress}`);
       setNewOwnerAddress("");
     } catch (err) {
@@ -320,51 +281,34 @@ export default function ConnectWallet() {
     }
   };
 
-  // Filter for buy - only show buy button for domains that are listed for sale
   const isDomainForSale = (tokenId) => {
     return domainListings[tokenId] === true;
   };
 
-  // Sold Domains List Component
   const SoldDomainsList = () => {
     if (soldDomains.length === 0) return null;
-
     return (
       <div style={{
-        position: 'fixed',
-        top: '20px',
-        right: '20px',
-        backgroundColor: '#f8f9fa',
-        border: '1px solid #dee2e6',
-        borderRadius: '8px',
-        padding: '15px',
-        maxWidth: '300px',
-        maxHeight: '400px',
-        overflowY: 'auto',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        zIndex: 1000
+        position: 'fixed', top: '20px', right: '20px',
+        backgroundColor: '#f8f9fa', border: '1px solid #dee2e6',
+        borderRadius: '8px', padding: '15px', maxWidth: '300px', maxHeight: '400px',
+        overflowY: 'auto', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', zIndex: 1000
       }}>
         <h4 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Sold Domains</h4>
         {soldDomains.map((sold, index) => (
           <div key={index} style={{
-            padding: '8px',
-            margin: '5px 0',
-            backgroundColor: '#d4edda',
-            border: '1px solid #c3e6cb',
-            borderRadius: '4px'
+            padding: '8px', margin: '5px 0', backgroundColor: '#d4edda',
+            border: '1px solid #c3e6cb', borderRadius: '4px'
           }}>
             <div><strong>{sold.domainName}</strong></div>
             <div>Price: {sold.price} ETH</div>
-            <div style={{ fontSize: '0.8em', color: '#6c757d' }}>
-              Sold: {sold.soldAt}
-            </div>
+            <div style={{ fontSize: '0.8em', color: '#6c757d' }}>Sold: {sold.soldAt}</div>
           </div>
         ))}
       </div>
     );
   };
 
-  // Owner panel
   const renderOwnerPanel = () => {
     return (
       <div style={{ border: "1px solid #ccc", padding: "1rem", marginTop: "1rem" }}>
@@ -382,8 +326,17 @@ export default function ConnectWallet() {
             onChange={(e) => setNewWhoisData(e.target.value)}
             style={{ marginRight: "0.5rem", padding: "0.5rem" }}
           />
-          <button onClick={handleRegister} style={{ padding: "0.5rem 1rem" }}>
+          <button onClick={handleRegister} style={{ padding: "0.5rem 1rem", marginRight: "0.5rem" }}>
             📌 Register New Domain
+          </button>
+          {/* ZK Proof Button Placeholder */}
+          <button
+            className="btn btn-secondary"
+            style={{ backgroundColor: '#888', color: '#fff', cursor: 'not-allowed', padding: "0.5rem 1rem" }}
+            title="ZK Proof verification will be available soon"
+            disabled
+          >
+            🔒 Verify Proof (ZK)
           </button>
         </div>
         <div style={{ marginTop: "0.5rem" }}>
@@ -415,14 +368,10 @@ export default function ConnectWallet() {
               <p style={{ color: "orange" }}>📜 Contract Owner: {owner} — You are NOT the contract owner ⚠️</p>
             )
           )}
-          
           {!isValidMarketplaceAddress() && (
             <p style={{ color: "red" }}>⚠️ Marketplace contract is not properly configured</p>
           )}
-          
-          {/* Sold Domains List */}
           <SoldDomainsList />
-          
           <div>
             <h3>📜 Registered Domains</h3>
             {domains.length === 0 ? (
@@ -439,7 +388,6 @@ export default function ConnectWallet() {
                   >
                     {refreshingDomain === d.domainName ? "Refreshing..." : "Refresh WHOIS"}
                   </button>
-                  
                   {isDomainForSale(d.tokenId) ? (
                     <div>
                       <p>💰 Price: {sellPrices[d.tokenId]} ETH</p>

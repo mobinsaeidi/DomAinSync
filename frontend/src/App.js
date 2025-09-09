@@ -7,7 +7,7 @@ import WhoisCard from "./components/WhoisCard";
 function App() {
   const [whoisData, setWhoisData] = useState(null);
 
-  // رویدادهای بلاکچین
+ 
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
@@ -18,7 +18,7 @@ function App() {
     loadWhois();
   }, []);
 
-  // اتصال به WebSocket و دریافت رویدادها
+  
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:4001");
 
@@ -26,8 +26,7 @@ function App() {
       try {
         const event = JSON.parse(msg.data);
 
-        // اگر بلاک زمان حاله => live
-        // اگر هنگام لود اولین بار اومده => history
+        
         setEvents((prev) => {
           const isDuplicate = prev.some(
             (e) => e.tokenId === event.tokenId && e.blockNumber === event.blockNumber
@@ -64,7 +63,7 @@ function App() {
           <li
             key={`${e.tokenId}-${e.blockNumber}-${i}`}
             style={{
-              color: e.type === "history" ? "#888" : "#0f0", // خاکستری برای history، سبز برای live
+              color: e.type === "history" ? "#888" : "#0f0", 
               fontWeight: e.type === "live" ? "bold" : "normal"
             }}
           >

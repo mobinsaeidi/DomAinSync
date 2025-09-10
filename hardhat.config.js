@@ -14,9 +14,9 @@ module.exports = {
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
     domaTestnet: {
-      url: DOMA_RPC_URL,
+      url: "https://rpc-testnet.doma.xyz",
       chainId: 97476,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
-    },
+    }
   },
 };

@@ -18,4 +18,4 @@ template WhoisHashCheck(n) {
     hasher.out === pubHash;
 }
 
-component main {public [pubHash]} = WhoisHashCheck(5);
+component main {public [pubHash]} = WhoisHashCheck(4);

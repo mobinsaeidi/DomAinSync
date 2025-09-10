@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 
 async function main() {
   
-  const domainDualIdentityAddress = "0xFcE33744f429aB77Eb84f0cC0829876167C343c2";
+  const domainDualIdentityAddress = "0x96bd117d50F1ca299E37D40AE979aE6716DB1";
 
   console.log("Deploying DomainMarketplace.");
   const Marketplace = await ethers.getContractFactory("DomainMarketplace");

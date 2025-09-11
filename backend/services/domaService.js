@@ -1,25 +1,25 @@
-// backend/services/domaService.js
+
 import axios from "axios";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const baseURL = process.env.DOMA_API_BASE; // مثلا https://api-testnet.doma.xyz
+const baseURL = process.env.DOMA_API_BASE; 
 const apiKey = process.env.DOMA_API_KEY;
 
-// این تابع فعلا از داده و امضای تستی استفاده می‌کنه
+
 export async function autoListDomain(contractAddress, tokenId, offerer, domainName) {
   try {
-    // زمان شروع و پایان (epoch seconds)
+    
     const startTime = Math.floor(Date.now() / 1000);
-    const endTime = startTime + 60 * 60 * 24 * 7; // یک هفته بعد
+    const endTime = startTime + 60 * 60 * 24 * 7; 
 
-    // payload مطابق مستندات DOMA Testnet API
+    
     const payload = {
-      orderbook: "DOMA", // می‌تونه OPENSEA هم باشه
-      chainId: "eip155:11155111", // فرض: chainId سپولیا روی تست‌نت DOMA
+      orderbook: "DOMA", 
+      chainId: "eip155:11155111", 
       parameters: {
-        offerer: offerer, // آدرس صاحب دامنه
+        offerer: offerer, 
         zone: "0x0000000000000000000000000000000000000000",
         orderType: 0,
         startTime: `${startTime}`,
@@ -30,7 +30,7 @@ export async function autoListDomain(contractAddress, tokenId, offerer, domainNa
         offer: [
           [
             {
-              itemType: 2, // ERC721
+              itemType: 2, 
               token: contractAddress,
               identifier: `${tokenId}`,
               startAmount: "1",
@@ -41,12 +41,12 @@ export async function autoListDomain(contractAddress, tokenId, offerer, domainNa
         consideration: [
           [
             {
-              itemType: 0, // ETH
+              itemType: 0, 
               token: "0x0000000000000000000000000000000000000000",
               identifier: "0",
-              startAmount: "20000000000000000", // 0.02 ETH
+              startAmount: "20000000000000000", 
               endAmount: "20000000000000000",
-              recipient: offerer, // فروشنده پول رو می‌گیره
+              recipient: offerer, 
             },
           ],
         ],
@@ -57,7 +57,7 @@ export async function autoListDomain(contractAddress, tokenId, offerer, domainNa
       },
       signature:
         "0x" +
-        "deadbeef".padStart(130, "f"), // امضای تستی — باید با EIP-712 ساخته بشه برای واقعی
+        "deadbeef".padStart(130, "f"), 
     };
 
     const headers = {
@@ -69,11 +69,11 @@ export async function autoListDomain(contractAddress, tokenId, offerer, domainNa
       headers,
     });
 
-    console.log(`✅ Domain listed on Doma: ${domainName} (tokenId: ${tokenId})`);
+    console.log(` Domain listed on Doma: ${domainName} (tokenId: ${tokenId})`);
     return data;
   } catch (err) {
     console.error(
-      `❌ Failed to auto-list domain ${domainName}:`,
+      ` Failed to auto-list domain ${domainName}:`,
       err.response?.data || err.message
     );
   }

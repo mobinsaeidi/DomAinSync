@@ -6,7 +6,7 @@ import * as circomlibjs from 'circomlibjs';
 const app = express();
 app.use(cors());
 
-// تابع کمکی برای تبدیل WHOIS به عدد
+
 function whoisToArray(whoisData) {
   const registryDomainIdNum = BigInt(parseInt(whoisData.registryDomainId?.replace(/\D/g, '') || '0'));
   const registrarNum = BigInt(parseInt(whoisData.registrarIANAId || '0'));
@@ -16,7 +16,7 @@ function whoisToArray(whoisData) {
   return [registryDomainIdNum, registrarNum, creationDateNum, expiryDateNum, reservedNum];
 }
 
-// مسیر WHOIS خام
+
 app.get('/whois/:domain', async (req, res) => {
   try {
     const result = await whois(req.params.domain);
@@ -26,7 +26,7 @@ app.get('/whois/:domain', async (req, res) => {
   }
 });
 
-// مسیر محاسبه pubHash
+
 app.get('/pubhash/:domain', async (req, res) => {
   try {
     const whoisData = await whois(req.params.domain);

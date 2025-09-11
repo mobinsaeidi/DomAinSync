@@ -47,13 +47,13 @@ contract DomainMarketplace is Ownable {
         require(listed.price > 0, "Domain not listed");
         require(msg.value >= listed.price, "Insufficient payment");
 
-        // انتقال دامنه به خریدار
+        
         domainContract.safeTransferFrom(listed.seller, msg.sender, tokenId);
 
-        // پرداخت به فروشنده
+        
         payable(listed.seller).transfer(msg.value);
 
-        // حذف آگهی
+        
         delete listings[tokenId];
 
         emit DomainSold(tokenId, msg.sender, listed.price);

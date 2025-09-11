@@ -15,14 +15,14 @@ const POSEIDON_INPUT_COUNT = 4;
 const app = express();
 app.use(cors());
 
-// محاسبه pubHash با poseidon
+
 async function computePubHash(privWhois) {
   const poseidon = await circomlibjs.buildPoseidon();
   const hash = poseidon(privWhois.map(BigInt));
   return poseidon.F.toString(hash);
 }
 
-// سرویس Whois ساده
+
 app.get('/whois/:domain', async (req, res) => {
   try {
     const data = await whois(req.params.domain);
@@ -32,7 +32,7 @@ app.get('/whois/:domain', async (req, res) => {
   }
 });
 
-// سرویس تولید proof
+
 app.get('/gen-proof/:domain', async (req, res) => {
   const domain = req.params.domain;
   instanceCounter++;
@@ -45,7 +45,7 @@ app.get('/gen-proof/:domain', async (req, res) => {
   const publicPath = path.join(instanceDir, 'public.json');
 
   try {
-    // گرفتن داده‌های WHOIS
+    
     const whoisData = await whois(domain);
     const priv_whois = Object.values(whoisData)
       .slice(0, POSEIDON_INPUT_COUNT)
@@ -62,10 +62,10 @@ app.get('/gen-proof/:domain', async (req, res) => {
     const witnessGen = path.join(zkBuildDir, 'whoisHashCheck_js', 'generate_witness.js');
     const zkeyFile = path.join(zkBuildDir, 'whoisHashCheck_final.zkey');
 
-    // تولید witness
+    
     execFileSync('node', [witnessGen, wasmFile, inputPath, witnessPath], { stdio: 'inherit' });
 
-    // تولید proof
+    
     execFileSync('npx', [
       'snarkjs', 'groth16', 'prove',
       zkeyFile,
@@ -74,7 +74,7 @@ app.get('/gen-proof/:domain', async (req, res) => {
       publicPath
     ], { stdio: 'inherit' });
 
-    // خواندن نتایج
+    
     const proof = JSON.parse(fs.readFileSync(proofPath));
     const publicInputs = JSON.parse(fs.readFileSync(publicPath));
 
@@ -89,7 +89,7 @@ app.get('/gen-proof/:domain', async (req, res) => {
     console.error('Proof generation error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   } finally {
-    // پاک کردن پوشه موقت
+    
     fs.rmSync(instanceDir, { recursive: true, force: true });
   }
 });

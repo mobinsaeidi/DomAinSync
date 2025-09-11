@@ -14,11 +14,11 @@ async function main() {
   const hash = poseidon(priv_whois);
   const hashStr = poseidon.F.toString(hash);
   
-  console.log("محاسبه شده:", hashStr);
-  console.log("هماهنگ با pubHash؟",
+  console.log(hashStr);
+  console.log(
     hashStr === "1039295561658224528318955332846311917121698364827465731593047821592669"
-      ? "✅ بله"
-      : "❌ نه"
+      ? "yes"
+      : "no"
   );
 }
 

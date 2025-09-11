@@ -23,7 +23,7 @@ const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
 
 let lastCheckedBlock = DEPLOY_BLOCK;
 
-// --- نسخه ضد محدودیت ---
+
 async function debugAllLogs() {
   console.log(`🔍 Fetching ALL logs from block ${DEPLOY_BLOCK} in chunks...`);
   const latestBlock = await provider.getBlockNumber();
@@ -47,7 +47,7 @@ async function debugAllLogs() {
 
       fromBlock = toBlock + 1;
 
-      // هوشمند کردن chunkSize
+      
       if (logs.length >= 1000 && chunkSize > 1) {
         chunkSize = Math.max(1, Math.floor(chunkSize / 2));
       } else if (logs.length < 900 && chunkSize < 5000) {

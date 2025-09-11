@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { CONTRACT_ABI, CONTRACT_ADDRESS } from "./contractInfo";
+import {
+  CONTRACT_ABI,
+  CONTRACT_ADDRESS,
+  MARKETPLACE_CONTRACT_ABI,
+  MARKETPLACE_CONTRACT_ADDRESS
+} from "./contractInfo";
 
 const DOMA_CHAIN_ID = "0x17cc4";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -353,7 +358,7 @@ export default function ConnectWallet() {
             >
               {verificationStatus === "verifying" ? "Verifying..." : 
                verificationStatus === "verified" ? "Verified" : 
-               "ZK Verify Domain Ownership"}
+               "ZKVerify Domain Ownership"}
             </button>
           </div>
 

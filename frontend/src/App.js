@@ -12,7 +12,7 @@ function App() {
 
   useEffect(() => {
     async function loadWhois() {
-      const data = await fetchWhois("google.com");
+      const data = await fetchWhois("");
       setWhoisData(data);
     }
     loadWhois();
@@ -54,10 +54,10 @@ function App() {
       <h1>DomainSync Dapp</h1>
       <ConnectWallet />
 
-      <h2>WHOIS تست</h2>
+      <h2> </h2>
       <WhoisCard data={whoisData} />
 
-      <h2>📡 Live Blockchain Events</h2>
+      <h2></h2>
       <ul>
         {events.map((e, i) => (
           <li

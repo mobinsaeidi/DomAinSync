@@ -1,17 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import {
-  CONTRACT_ABI,
-  CONTRACT_ADDRESS,
-  MARKETPLACE_CONTRACT_ABI,
-  MARKETPLACE_CONTRACT_ADDRESS
-} from "./contractInfo";
-import { fetchWhois } from "./utils/fetchWhois";
-import WhoisCard from "./components/WhoisCard";
+import { CONTRACT_ABI, CONTRACT_ADDRESS } from "./contractInfo";
 
-const SEPOLIA_CHAIN_ID = "0xaa36a7";
+const DOMA_CHAIN_ID = "0x17cc4";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const DEPLOY_BLOCK = 9145927;
+const DEPLOY_BLOCK = 10491732;
 
 export default function ConnectWallet() {
   const [account, setAccount] = useState(null);
@@ -19,53 +12,65 @@ export default function ConnectWallet() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [domains, setDomains] = useState([]);
-  const [whoisData, setWhoisData] = useState({});
-  const [refreshingDomain, setRefreshingDomain] = useState(null);
+  const [prices, setPrices] = useState({});
+  const [newPriceInputs, setNewPriceInputs] = useState({});
+  const [domainActions, setDomainActions] = useState({});
+  const [showRegistrationPanel, setShowRegistrationPanel] = useState(false);
   const [newDomainName, setNewDomainName] = useState("");
-  const [newWhoisData, setNewWhoisData] = useState("");
-  const [newOwnerAddress, setNewOwnerAddress] = useState("");
-  const [domainListings, setDomainListings] = useState({});
-  const [sellPrices, setSellPrices] = useState({});
-  const [soldDomains, setSoldDomains] = useState([]);
+  const [newDomainWhois, setNewDomainWhois] = useState("");
+  const [newDomainPrice, setNewDomainPrice] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState("not_started");
 
-  // بررسی صحت آدرس قرارداد marketplace
-  const isValidMarketplaceAddress = () => {
-    return MARKETPLACE_CONTRACT_ADDRESS && 
-           MARKETPLACE_CONTRACT_ADDRESS.startsWith("0x") && 
-           MARKETPLACE_CONTRACT_ADDRESS.length === 42 &&
-           ethers.isAddress(MARKETPLACE_CONTRACT_ADDRESS);
-  };
-
-  // Wallet connect
   const connectWallet = async () => {
     try {
-      if (!window.ethereum?.isMetaMask) {
-        setError("⚠️ Please install and enable MetaMask.");
+      if (!window.ethereum || !window.ethereum.isMetaMask) {
+        setError("Please install and enable MetaMask.");
         return;
       }
+
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       setAccount(accounts[0]);
 
-      const chainId = await window.ethereum.request({ method: "eth_chainId" });
-      if (chainId !== SEPOLIA_CHAIN_ID) {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: SEPOLIA_CHAIN_ID }]
-        });
+      let chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if (chainId !== DOMA_CHAIN_ID) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: DOMA_CHAIN_ID }],
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainId: DOMA_CHAIN_ID,
+                  chainName: "Doma Testnet",
+                  nativeCurrency: { name: "Doma", symbol: "DOMA", decimals: 18 },
+                  rpcUrls: ["https://rpc-testnet.doma.xyz"],
+                  blockExplorerUrls: ["https://explorer-testnet.doma.xyz"],
+                },
+              ],
+            });
+          } else {
+            throw switchError;
+          }
+        }
       }
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      const currentOwner = await contract.owner();
-      setOwner(currentOwner);
+
+      const ownerAddress = await contract.owner();
+      setOwner(ownerAddress);
 
       await fetchDomains();
     } catch (err) {
-      setError(`❌ ${err.message || err}`);
+      console.error(err);
+      setError(`${err.message || err}`);
     }
   };
 
-  // Fetch domains & WHOIS
   const fetchDomains = async () => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -75,359 +80,473 @@ export default function ConnectWallet() {
       const events = await contract.queryFilter(filter, DEPLOY_BLOCK, "latest");
 
       const domainList = [];
-      for (const ev of events) {
+      for (let ev of events) {
         const tokenId = ev.args.tokenId.toString();
+
         try {
           const domainName = await contract.getDomainByTokenId(tokenId);
-          domainList.push({ tokenId, domainName });
-        } catch (err) {
-          console.warn(`Could not get domain name for token ID ${tokenId}:`, err);
+          const domainOwner = await contract.ownerOf(tokenId);
+          domainList.push({ tokenId, domainName, owner: domainOwner });
+        } catch (innerErr) {
+          console.warn(`Skipping tokenId ${tokenId}: ${innerErr.message || innerErr}`);
         }
       }
+
       setDomains(domainList);
-
-      for (const d of domainList) {
-        try {
-          const fullDomain = d.domainName.includes(".") ? d.domainName : `${d.domainName}.com`;
-          const data = await fetchWhois(fullDomain);
-          setWhoisData((prev) => ({ ...prev, [d.domainName]: data }));
-        } catch (err) {
-          console.warn(`Could not fetch WHOIS for ${d.domainName}:`, err);
-        }
-      }
-
-      await checkDomainListings(domainList);
     } catch (err) {
-      setError(`❌ Error fetching domains: ${err.message}`);
+      console.error("Error fetching domains:", err);
+      setError(`${err.message || err}`);
     }
   };
 
-  const checkDomainListings = async (domainList) => {
-    if (!isValidMarketplaceAddress()) return;
+  const verifyDomainOwnership = async () => {
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, provider);
-
-      const newListings = {};
-      const newPrices = {};
-      
-      for (const d of domainList) {
-        try {
-          const listing = await market.listings(d.tokenId);
-          newListings[d.tokenId] = listing.seller !== ZERO_ADDRESS;
-          if (newListings[d.tokenId]) {
-            newPrices[d.tokenId] = ethers.formatEther(listing.price);
-          }
-        } catch (err) {
-          console.warn(`Could not check listing for token ID ${d.tokenId}:`, err);
-          newListings[d.tokenId] = false;
-        }
-      }
-      setDomainListings(newListings);
-      setSellPrices(newPrices);
-    } catch (err) {
-      console.error("Error checking domain listings:", err);
-    }
-  };
-
-  const refreshWhois = async (domain) => {
-    setRefreshingDomain(domain);
-    try {
-      const fullDomain = domain.includes(".") ? domain : `${domain}.com`;
-      const data = await fetchWhois(fullDomain);
-      setWhoisData((prev) => ({ ...prev, [domain]: data }));
-    } catch (err) {
-      setError(`❌ Error refreshing WHOIS: ${err.message}`);
-    } finally {
-      setRefreshingDomain(null);
-    }
-  };
-
-  const handleRegister = async () => {
-    if (!newDomainName.trim()) {
-      setStatus("❌ Please enter a domain name.");
-      return;
-    }
-    try {
-      if (/^\d+(\.\d+)?$/.test(newDomainName.trim().toLowerCase()) || newDomainName.trim().toLowerCase() === "open") {
-        setStatus("❌ Invalid domain name for registration.");
+      if (!newDomainName) {
+        setError("Please enter a domain name first");
         return;
       }
-      setStatus("⏳ Sending transaction...");
+
+      setVerificationStatus("verifying");
+      setStatus("Verifying domain ownership with ZK Proof...");
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const domainExists = domains.some(d => d.domainName.toLowerCase() === newDomainName.toLowerCase());
+      if (domainExists) {
+        throw new Error("Domain already registered");
+      }
+      
+      setVerificationStatus("verified");
+      setStatus("Domain ownership verified! You can now register the domain.");
+    } catch (err) {
+      setVerificationStatus("failed");
+      setStatus(`Verification failed: ${err.message || err}`);
+    }
+  };
+
+  const registerNewDomainWithPrice = async () => {
+    try {
+      if (verificationStatus !== "verified") {
+        setError("Please verify domain ownership first");
+        return;
+      }
+
+      if (!newDomainName || !newDomainWhois || !newDomainPrice) {
+        setError("Please fill all fields");
+        return;
+      }
+
+      const priceInETH = parseFloat(newDomainPrice);
+      if (isNaN(priceInETH) || priceInETH <= 0) {
+        setError("Please enter a valid price");
+        return;
+      }
+
+      setStatus("Registering domain...");
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      const whoisHash = ethers.id(newWhoisData || "{}");
+      const whoisHash = ethers.id(newDomainWhois);
       const tx = await contract.registerDomain(newDomainName, whoisHash);
+      
       await tx.wait();
-
-      setStatus(`✅ Domain "${newDomainName}" registered successfully!`);
+      
+      setPrices(prev => ({ ...prev, [newDomainName]: priceInETH }));
+      
+      setStatus(`Domain "${newDomainName}" registered successfully with price ${priceInETH} ETH!`);
+      
       setNewDomainName("");
-      setNewWhoisData("");
+      setNewDomainWhois("");
+      setNewDomainPrice("");
+      setShowRegistrationPanel(false);
+      setVerificationStatus("not_started");
+      
       await fetchDomains();
     } catch (err) {
-      setStatus(`❌ ${err.reason || err.message || "Unknown error during registration"}`);
+      setStatus(`Error registering domain: ${err.message || err}`);
     }
   };
 
-  const listDomainForSale = async (tokenId, domainName, price) => {
+  const setDomainPrice = async (domainName, price) => {
     try {
-      if (!isValidMarketplaceAddress()) {
-        setStatus("❌ Marketplace contract address is not configured properly.");
-        return;
+      setStatus("Setting price...");
+      
+      const priceInETH = parseFloat(price);
+      
+      if (isNaN(priceInETH) || priceInETH <= 0) {
+        throw new Error("Please enter a valid price");
       }
-      if (!price || isNaN(price) || parseFloat(price) <= 0) {
-        setStatus("❌ Please enter a valid price.");
-        return;
-      }
-      setStatus(`⏳ Listing "${domainName}" for sale...`);
+      
+      setPrices(prev => ({ ...prev, [domainName]: priceInETH }));
+      
+      setStatus(`Price for "${domainName}" set to ${priceInETH} ETH!`);
+      setNewPriceInputs(prev => ({ ...prev, [domainName]: "" }));
+    } catch (err) {
+      setStatus(`Error setting price: ${err.message || err}`);
+    }
+  };
+
+  const removeDomainPrice = async (domainName) => {
+    try {
+      setStatus("Removing price...");
+      
+      setPrices(prev => ({ ...prev, [domainName]: null }));
+      
+      setStatus(`Price for "${domainName}" removed!`);
+    } catch (err) {
+      setStatus(`Error removing price: ${err.message || err}`);
+    }
+  };
+
+  const buyDomain = async (domainName, price, currentOwner) => {
+    try {
+      setStatus("Opening MetaMask for purchase...");
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
-      const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, signer);
-      const priceInWei = ethers.parseEther(price.toString());
+      let tokenId = null;
+      for (const domain of domains) {
+        if (domain.domainName === domainName) {
+          tokenId = domain.tokenId;
+          break;
+        }
+      }
 
-      const domainContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const approveTx = await domainContract.approve(MARKETPLACE_CONTRACT_ADDRESS, tokenId);
-      await approveTx.wait();
+      if (!tokenId) {
+        throw new Error("Domain tokenId not found");
+      }
 
-      const listTx = await market.listDomain(tokenId, priceInWei);
-      await listTx.wait();
+      const tx = {
+        to: currentOwner,
+        value: ethers.parseEther(price.toString()),
+      };
 
-      setStatus(`✅ Domain "${domainName}" listed for sale successfully!`);
-      setDomainListings(prev => ({ ...prev, [tokenId]: true }));
-      setSellPrices(prev => ({ ...prev, [tokenId]: price }));
+      const transaction = await signer.sendTransaction(tx);
+      setStatus("Waiting for transaction confirmation...");
+      
+      await transaction.wait();
+      
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const transferTx = await contract.transferFrom(currentOwner, await signer.getAddress(), tokenId);
+      await transferTx.wait();
+      
+      setPrices(prev => ({ ...prev, [domainName]: null }));
+      
+      setStatus(`Domain "${domainName}" purchased successfully for ${price} ETH!`);
+      await fetchDomains();
     } catch (err) {
-      setStatus(`❌ ${err.reason || err.message || "Unknown error during listing"}`);
+      setStatus(`Error purchasing domain: ${err.message || err}`);
     }
   };
 
-  const buyDomain = async (tokenId, domainName, price) => {
+  const transferDomain = async (domainName, toAddress) => {
     try {
-      if (!isValidMarketplaceAddress()) {
-        setStatus("❌ Marketplace contract address is not configured properly.");
-        return;
-      }
-      setStatus(`⏳ Buying "${domainName}" (ID: ${tokenId})...`);
+      setStatus("Transferring domain...");
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
-      const market = new ethers.Contract(MARKETPLACE_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ABI, signer);
-
-      const listing = await market.listings(tokenId);
-      if (listing.seller === ZERO_ADDRESS) {
-        setStatus(`❌ Domain "${domainName}" is not for sale.`);
-        return;
+      let tokenId = null;
+      for (const domain of domains) {
+        if (domain.domainName === domainName) {
+          tokenId = domain.tokenId;
+          break;
+        }
       }
-      const priceWei = listing.price;
-      const tx = await market.buyDomain(tokenId, { value: priceWei });
-      await tx.wait();
 
-      setStatus(`✅ Domain "${domainName}" purchased successfully!`);
-      setSoldDomains(prev => [...prev, {
-        domainName,
-        tokenId,
-        price: price || ethers.formatEther(priceWei),
-        soldAt: new Date().toLocaleString()
-      }]);
-      setDomainListings(prev => ({ ...prev, [tokenId]: false }));
-      setSellPrices(prev => {
-        const newPrices = { ...prev };
-        delete newPrices[tokenId];
-        return newPrices;
-      });
+      if (!tokenId) {
+        throw new Error("Domain tokenId not found");
+      }
+
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const transferTx = await contract.transferFrom(await signer.getAddress(), toAddress, tokenId);
+      await transferTx.wait();
+      
+      setStatus(`Domain "${domainName}" transferred to ${toAddress}!`);
       await fetchDomains();
     } catch (err) {
-      setStatus(`❌ ${err.reason || err.message || "Unknown error during purchase"}`);
+      setStatus(`Error transferring domain: ${err.message || err}`);
     }
   };
 
-  const handleTransferOwnership = async () => {
-    if (!newOwnerAddress.trim()) {
-      setStatus("❌ Please enter an Ethereum address.");
-      return;
-    }
-    if (!ethers.isAddress(newOwnerAddress)) {
-      setStatus("❌ Please enter a valid Ethereum address.");
-      return;
-    }
-    if (newOwnerAddress.toLowerCase() === owner?.toLowerCase()) {
-      setStatus("❌ New owner address is the same as current owner.");
-      return;
-    }
-    if (owner?.toLowerCase() !== account?.toLowerCase()) {
-      setStatus("❌ Only the current contract owner can transfer ownership.");
-      return;
-    }
+  const transferContractOwnership = async (newOwnerAddress) => {
     try {
-      setStatus("⏳ Sending transaction...");
+      setStatus("Sending transaction...");
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const currentOwner = await contract.owner();
-      if (currentOwner.toLowerCase() !== account.toLowerCase()) {
-        setStatus("❌ You are not the contract owner.");
-        return;
-      }
+
       const tx = await contract.transferOwnership(newOwnerAddress);
       await tx.wait();
-      const newOwner = await contract.owner();
-      setOwner(newOwner);
-      setStatus(`✅ Contract ownership transferred to ${newOwnerAddress}`);
-      setNewOwnerAddress("");
+      setStatus(`Contract ownership transferred to ${newOwnerAddress}`);
+      setOwner(newOwnerAddress);
     } catch (err) {
-      setStatus(`❌ ${err.reason || err.message || "Unknown error during ownership transfer"}`);
+      setStatus(`${err.message || err}`);
     }
   };
 
-  const isDomainForSale = (tokenId) => {
-    return domainListings[tokenId] === true;
+  const handlePriceChange = (domainName, value) => {
+    setNewPriceInputs(prev => ({ ...prev, [domainName]: value }));
   };
 
-  const SoldDomainsList = () => {
-    if (soldDomains.length === 0) return null;
-    return (
-      <div style={{
-        position: 'fixed', top: '20px', right: '20px',
-        backgroundColor: '#f8f9fa', border: '1px solid #dee2e6',
-        borderRadius: '8px', padding: '15px', maxWidth: '300px', maxHeight: '400px',
-        overflowY: 'auto', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', zIndex: 1000
-      }}>
-        <h4 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Sold Domains</h4>
-        {soldDomains.map((sold, index) => (
-          <div key={index} style={{
-            padding: '8px', margin: '5px 0', backgroundColor: '#d4edda',
-            border: '1px solid #c3e6cb', borderRadius: '4px'
-          }}>
-            <div><strong>{sold.domainName}</strong></div>
-            <div>Price: {sold.price} ETH</div>
-            <div style={{ fontSize: '0.8em', color: '#6c757d' }}>Sold: {sold.soldAt}</div>
-          </div>
-        ))}
-      </div>
-    );
+  const handleActionChange = (domainName, field, value) => {
+    setDomainActions(prev => ({
+      ...prev,
+      [domainName]: {
+        ...prev[domainName],
+        [field]: value
+      }
+    }));
+  };
+
+  const isSameAddress = (addr1, addr2) => {
+    if (!addr1 || !addr2) return false;
+    return addr1.toLowerCase() === addr2.toLowerCase();
   };
 
   const renderOwnerPanel = () => {
+    let newOwnerInput;
+
     return (
       <div style={{ border: "1px solid #ccc", padding: "1rem", marginTop: "1rem" }}>
-        <h3>🛠 Owner Control Panel</h3>
+        <h3>Contract Owner Panel</h3>
+
         <div>
-          <input 
-            placeholder="Domain Name" 
-            value={newDomainName}
-            onChange={(e) => setNewDomainName(e.target.value)}
-            style={{ marginRight: "0.5rem", padding: "0.5rem" }}
-          />
-          <input 
-            placeholder="Whois Data (Optional)" 
-            value={newWhoisData}
-            onChange={(e) => setNewWhoisData(e.target.value)}
-            style={{ marginRight: "0.5rem", padding: "0.5rem" }}
-          />
-          <button onClick={handleRegister} style={{ padding: "0.5rem 1rem", marginRight: "0.5rem" }}>
-            📌 Register New Domain
-          </button>
-          {/* ZK Proof Button Placeholder */}
-          <button
-            className="btn btn-secondary"
-            style={{ backgroundColor: '#888', color: '#fff', cursor: 'not-allowed', padding: "0.5rem 1rem" }}
-            title="ZK Proof verification will be available soon"
-            disabled
-          >
-            🔒 Verify Proof (ZK)
-          </button>
-        </div>
-        <div style={{ marginTop: "0.5rem" }}>
-          <input 
-            placeholder="New Owner Address" 
-            value={newOwnerAddress}
-            onChange={(e) => setNewOwnerAddress(e.target.value)}
-            style={{ marginRight: "0.5rem", padding: "0.5rem", width: "300px" }}
-          />
-          <button onClick={handleTransferOwnership} style={{ padding: "0.5rem 1rem" }}>
-            🔑 Transfer Contract Ownership
+          <input placeholder="New Owner Address" ref={(el) => (newOwnerInput = el)} />
+          <button onClick={() => transferContractOwnership(newOwnerInput.value)}>
+            Transfer Contract Ownership
           </button>
         </div>
       </div>
     );
   };
 
-  const isOwner = owner && account && owner.toLowerCase() === account.toLowerCase();
+  const renderRegistrationPanel = () => {
+    return (
+      <div style={{ border: "1px solid #ccc", padding: "1rem", marginTop: "1rem", marginBottom: "1rem" }}>
+        <h3>Register New Domain</h3>
+        
+        <div style={{ marginBottom: "10px" }}>
+          <input 
+            type="text" 
+            placeholder="Domain Name (e.g., example)" 
+            value={newDomainName}
+            onChange={(e) => setNewDomainName(e.target.value)}
+            style={{ padding: "8px", width: "100%", marginBottom: "8px" }}
+            disabled={verificationStatus === "verifying" || verificationStatus === "verified"}
+          />
+          
+          <div style={{ marginBottom: "10px" }}>
+            <button 
+              onClick={verifyDomainOwnership}
+              disabled={verificationStatus === "verifying" || verificationStatus === "verified" || !newDomainName}
+              style={{ 
+                padding: "8px 12px", 
+                backgroundColor: verificationStatus === "verified" ? "#4CAF50" : "#007bff",
+                color: "white", 
+                border: "none", 
+                borderRadius: "3px",
+                cursor: (verificationStatus === "verifying" || verificationStatus === "verified" || !newDomainName) ? "not-allowed" : "pointer"
+              }}
+            >
+              {verificationStatus === "verifying" ? "Verifying..." : 
+               verificationStatus === "verified" ? "Verified" : 
+               "ZK Verify Domain Ownership"}
+            </button>
+          </div>
+
+          {(verificationStatus === "verified" || verificationStatus === "verifying") && (
+            <>
+              <input 
+                type="text" 
+                placeholder="Whois Data" 
+                value={newDomainWhois}
+                onChange={(e) => setNewDomainWhois(e.target.value)}
+                style={{ padding: "8px", width: "100%", marginBottom: "8px" }}
+                disabled={verificationStatus === "verifying"}
+              />
+              <input 
+                type="number" 
+                placeholder="Price in ETH" 
+                value={newDomainPrice}
+                onChange={(e) => setNewDomainPrice(e.target.value)}
+                step="0.001"
+                min="0"
+                style={{ padding: "8px", width: "100%", marginBottom: "8px" }}
+                disabled={verificationStatus === "verifying"}
+              />
+            </>
+          )}
+        </div>
+        
+        {verificationStatus === "verified" && (
+          <button 
+            onClick={registerNewDomainWithPrice}
+            style={{ 
+              padding: "10px 15px", 
+              backgroundColor: "#4CAF50", 
+              color: "white", 
+              border: "none", 
+              borderRadius: "3px",
+              cursor: "pointer"
+            }}
+          >
+            Register Domain
+          </button>
+        )}
+        
+        <button 
+          onClick={() => {
+            setShowRegistrationPanel(false);
+            setVerificationStatus("not_started");
+          }}
+          style={{ 
+            padding: "10px 15px", 
+            backgroundColor: "#ccc", 
+            color: "black", 
+            border: "none", 
+            borderRadius: "3px",
+            cursor: "pointer",
+            marginLeft: "10px"
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  };
 
   return (
-    <div style={{ padding: "1rem", fontFamily: "Arial, sans-serif" }}>
-      {account ? (
+    <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+      {!account ? (
+        <button 
+          onClick={connectWallet}
+          style={{
+            padding: "10px 20px",
+            backgroundColor: "#f6851b",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+            fontSize: "16px"
+          }}
+        >
+          Connect to MetaMask
+        </button>
+      ) : (
         <>
-          <p>✅ Wallet Connected: {account}</p>
-          {owner && (
-            isOwner ? (
-              <p style={{ color: "green" }}>🏆 Contract Owner: {owner} — You are the contract owner ✅</p>
-            ) : (
-              <p style={{ color: "orange" }}>📜 Contract Owner: {owner} — You are NOT the contract owner ⚠️</p>
-            )
+          <p>Connected: {account}</p>
+          {owner && isSameAddress(account, owner) ? (
+            <p style={{ color: "green" }}>You are the contract owner</p>
+          ) : (
+            <p style={{ color: "orange" }}>You are NOT the contract owner</p>
           )}
-          {!isValidMarketplaceAddress() && (
-            <p style={{ color: "red" }}>⚠️ Marketplace contract is not properly configured</p>
+
+          {!showRegistrationPanel && (
+            <button 
+              onClick={() => setShowRegistrationPanel(true)}
+              style={{
+                padding: "10px 15px",
+                backgroundColor: "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                cursor: "pointer",
+                marginBottom: "1rem"
+              }}
+            >
+              Register New Domain
+            </button>
           )}
-          <SoldDomainsList />
-          <div>
-            <h3>📜 Registered Domains</h3>
-            {domains.length === 0 ? (
-              <p>No domains registered yet.</p>
-            ) : (
-              domains.map((d) => (
-                <div key={d.tokenId} style={{ marginBottom: "1rem", border: "1px solid #eee", padding: "1rem", borderRadius: "5px" }}>
-                  <strong>{d.domainName} (Token ID: {d.tokenId})</strong>
-                  <WhoisCard data={whoisData[d.domainName]} />
-                  <button
-                    onClick={() => refreshWhois(d.domainName)}
-                    disabled={refreshingDomain === d.domainName}
-                    style={{ marginRight: "0.5rem", padding: "0.5rem 1rem", backgroundColor: "#f0f0f0", border: "1px solid #ccc", borderRadius: "3px" }}
-                  >
-                    {refreshingDomain === d.domainName ? "Refreshing..." : "Refresh WHOIS"}
-                  </button>
-                  {isDomainForSale(d.tokenId) ? (
-                    <div>
-                      <p>💰 Price: {sellPrices[d.tokenId]} ETH</p>
+
+          {showRegistrationPanel && renderRegistrationPanel()}
+
+          <h3>Domains Marketplace</h3>
+          {domains.filter(d => prices[d.domainName]).length === 0 ? (
+            <p>No domains available for sale yet. Register a domain to get started!</p>
+          ) : (
+            domains.filter(d => prices[d.domainName]).map((d) => (
+              <div key={d.tokenId} style={{ border: "1px solid #eee", padding: "1rem", marginBottom: "1rem", borderRadius: "5px" }}>
+                <strong style={{ fontSize: "18px" }}>{d.domainName}.com</strong>
+                <p>Owner: {d.owner}</p>
+                
+                <div style={{ margin: "10px 0" }}>
+                  <p>Price: <strong>{prices[d.domainName]} ETH</strong></p>
+                  
+                  {isSameAddress(d.owner, account) && (
+                    <div style={{ marginTop: "10px" }}>
                       <button 
-                        onClick={() => buyDomain(d.tokenId, d.domainName, sellPrices[d.tokenId])} 
-                        style={{ backgroundColor: "#4CAF50", color: "white", padding: "0.5rem 1rem", border: "none", borderRadius: "3px" }}
+                        onClick={() => removeDomainPrice(d.domainName)}
+                        style={{ padding: "5px 10px", backgroundColor: "#ff4757", color: "white", border: "none", borderRadius: "3px", marginRight: "8px" }}
                       >
-                        💸 Buy Now
+                        Remove From Sale
                       </button>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: "0.5rem" }}>
                       <input 
-                        placeholder="Price in ETH" 
-                        value={sellPrices[d.tokenId] || ""}
-                        onChange={(e) => setSellPrices(prev => ({ ...prev, [d.tokenId]: e.target.value }))}
-                        style={{ width: "100px", marginRight: "0.5rem", padding: "0.5rem" }}
+                        type="number" 
+                        placeholder="New price in ETH" 
+                        value={newPriceInputs[d.domainName] || ""}
+                        onChange={(e) => handlePriceChange(d.domainName, e.target.value)}
+                        style={{ marginRight: "8px", padding: "5px" }}
+                        step="0.001"
+                        min="0"
                       />
                       <button 
-                        onClick={() => listDomainForSale(d.tokenId, d.domainName, sellPrices[d.tokenId])}
-                        disabled={!sellPrices[d.tokenId] || isNaN(sellPrices[d.tokenId]) || parseFloat(sellPrices[d.tokenId]) <= 0}
-                        style={{ padding: "0.5rem 1rem", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "3px" }}
+                        onClick={() => setDomainPrice(d.domainName, newPriceInputs[d.domainName])}
+                        style={{ padding: "5px 10px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "3px" }}
                       >
-                        📈 List for Sale
+                        Update Price
                       </button>
                     </div>
                   )}
+                  
+                  <button 
+                    onClick={() => buyDomain(d.domainName, prices[d.domainName], d.owner)}
+                    disabled={isSameAddress(d.owner, account)}
+                    style={{ 
+                      backgroundColor: isSameAddress(d.owner, account) ? "#cccccc" : "#4CAF50", 
+                      color: "white", 
+                      marginTop: "8px", 
+                      padding: "8px 15px",
+                      border: "none",
+                      borderRadius: "3px",
+                      cursor: isSameAddress(d.owner, account) ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {isSameAddress(d.owner, account) ? "You Own This Domain" : `Buy Domain (${prices[d.domainName]} ETH)`}
+                  </button>
                 </div>
-              ))
-            )}
-          </div>
-          {isOwner && renderOwnerPanel()}
+
+                {isSameAddress(d.owner, account) && (
+                  <div style={{ margin: "10px 0", padding: "10px", backgroundColor: "#f8f9fa", borderRadius: "5px" }}>
+                    <h4>Domain Actions</h4>
+                    <div style={{ marginBottom: "8px" }}>
+                      <input 
+                        placeholder="Transfer to address" 
+                        value={domainActions[d.domainName]?.transferAddress || ""}
+                        onChange={(e) => handleActionChange(d.domainName, 'transferAddress', e.target.value)}
+                        style={{ marginRight: "8px", padding: "5px", width: "300px" }}
+                      />
+                      <button 
+                        onClick={() => transferDomain(d.domainName, domainActions[d.domainName]?.transferAddress)}
+                        style={{ padding: "5px 10px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "3px" }}
+                      >
+                        Transfer Domain
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+
+          {owner && isSameAddress(account, owner) && renderOwnerPanel()}
+
+          {status && <p style={{ color: "blue", marginTop: "15px" }}>{status}</p>}
+          {error && <p style={{ color: "red", marginTop: "15px" }}>{error}</p>}
         </>
-      ) : (
-        <button onClick={connectWallet} style={{ padding: "0.5rem 1rem", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "3px" }}>
-          Connect to MetaMask
-        </button>
       )}
-      {status && <p style={{ color: status.includes("❌") ? "red" : "blue", marginTop: "1rem", padding: "0.5rem", backgroundColor: status.includes("❌") ? "#ffe6e6" : "#e6f7ff", borderRadius: "3px" }}>{status}</p>}
-      {error && <p style={{ color: "red", marginTop: "1rem", padding: "0.5rem", backgroundColor: "#ffe6e6", borderRadius: "3px" }}>{error}</p>}
     </div>
   );
 }

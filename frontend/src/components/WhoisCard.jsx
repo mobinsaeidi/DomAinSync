@@ -40,7 +40,7 @@ function formatDate(dateString) {
   return dateString;
 }
 
-// رنگ وضعیت Expiry
+
 function getExpiryStatusColor(expiryDateString) {
   if (!expiryDateString) return "#999";
   const expiryDate = new Date(expiryDateString);
@@ -49,12 +49,12 @@ function getExpiryStatusColor(expiryDateString) {
   const today = new Date();
   const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
 
-  if (diffDays > 60) return "#2ecc71"; // سبز
-  if (diffDays > 0) return "#e67e22";  // نارنجی
-  return "#e74c3c"; // قرمز
+  if (diffDays > 60) return "#2ecc71"; 
+  if (diffDays > 0) return "#e67e22";  
+  return "#e74c3c"; 
 }
 
-// کامپوننت Badge برای نمایش Expiry
+
 function StatusBadge({ date }) {
   return (
     <span

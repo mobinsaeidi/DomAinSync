@@ -11,13 +11,14 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const abiFilePath = path.join(__dirname, "DomainDualIdentityABI.json");
 const CONTRACT_ABI = JSON.parse(fs.readFileSync(abiFilePath, "utf8"));
-const CONTRACT_ADDRESS = "0xFcE33744f429aB77Eb84f0cC0829876167C343c2";
+const CONTRACT_ADDRESS = "0x96db117d850F1ca2990374Da4E027B9aE6716D81"; // Doma Testnet
 
-const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+const DOMA_EXPLORER_BASE = "https://explorer-testnet.doma.xyz";
 
 console.log("Listening for Transfer events & sending to Telegram...");
 
@@ -32,7 +33,6 @@ contract.on("Transfer", async (from, to, tokenId, event) => {
             const receipt = await provider.getTransactionReceipt(txHash);
             blockNumber = receipt?.blockNumber ?? "N/A";
 
-           
             const tx = await provider.getTransaction(txHash);
             if (tx?.value) {
                 priceEth = ethers.formatEther(tx.value);
@@ -41,21 +41,21 @@ contract.on("Transfer", async (from, to, tokenId, event) => {
             blockNumber = event.log?.blockNumber ?? "N/A";
         }
 
-        const etherscanTx = `https://sepolia.etherscan.io/tx/${txHash}`;
-        const etherscanBlock = blockNumber !== "N/A" 
-            ? `https://sepolia.etherscan.io/block/${blockNumber}` 
+        const explorerTx = `${DOMA_EXPLORER_BASE}/tx/${txHash}`;
+        const explorerBlock = blockNumber !== "N/A"
+            ? `${DOMA_EXPLORER_BASE}/block/${blockNumber}`
             : null;
 
-        const message =
-`Domain Transfer Alert
-
-From: \`${from}\`
-To: \`${to}\`
-Token ID: \`${tokenId}\`
-Domain: \`${domainName || 'N/A'}\`
-Price: \`${priceEth} ETH\`
-Block: ${etherscanBlock ? `[${blockNumber}](${etherscanBlock})` : `\`${blockNumber}\``}
-Tx: [View on Etherscan](${etherscanTx})`;
+        const message = 
+`*DOMAIN TRANSFER ALERT*
+────────────────────────
+*From:* [${from}](${DOMA_EXPLORER_BASE}/address/${from})
+*To:* [${to}](${DOMA_EXPLORER_BASE}/address/${to})
+*Token ID:* \`${tokenId}\`
+*Domain:* \`${domainName || 'N/A'}\`
+*Price:* \`${priceEth} ETH\`
+*Block:* ${explorerBlock ? `[${blockNumber}](${explorerBlock})` : `\`${blockNumber}\``}
+*Tx:* [View Transaction](${explorerTx})`;
 
         await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
         console.log("Telegram message sent:", { from, to, tokenId, domainName, priceEth, blockNumber });

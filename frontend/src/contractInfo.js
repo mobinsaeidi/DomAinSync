@@ -1,4 +1,4 @@
-export const CONTRACT_ADDRESS = "0xFcE33744f429aB77Eb84f0cC0829876167C343c2";
+export const CONTRACT_ADDRESS = "0x96db117d850F1ca2990374Da4E027B9aE6716D81";
 export const CONTRACT_ABI = [
     {
       "inputs": [],
@@ -587,7 +587,7 @@ export const CONTRACT_ABI = [
       "type": "function"
     }
 ];
-export const MARKETPLACE_CONTRACT_ADDRESS = "0x6E592F2361f6976836bB6873Bb589deBe1DEDc50";
+export const MARKETPLACE_CONTRACT_ADDRESS = "0xB5764206DA63A6366A1D03DD7494E19639c0a813";
 export const MARKETPLACE_CONTRACT_ABI = [
   {
     "inputs": [
@@ -816,6 +816,51 @@ export const MARKETPLACE_CONTRACT_ABI = [
     "name": "transferOwnership",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+export const ZK_CONTRACT_ADDRESS = "0xf95e1621357425eeFCaFB0D97Bb38F107c85D52B";
+export const ZK_CONTRACT_ABI = [
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_verifier", "type": "address" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": false, "internalType": "string", "name": "domain", "type": "string" },
+      { "indexed": false, "internalType": "bytes32", "name": "pubHash", "type": "bytes32" },
+      { "indexed": false, "internalType": "uint256[2]", "name": "a", "type": "uint256[2]" },
+      { "indexed": false, "internalType": "uint256[2][2]", "name": "b", "type": "uint256[2][2]" },
+      { "indexed": false, "internalType": "uint256[2]", "name": "c", "type": "uint256[2]" }
+    ],
+    "name": "WhoisProofSubmitted",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "domain", "type": "string" },
+      { "internalType": "bytes32", "name": "pubHash", "type": "bytes32" },
+      { "internalType": "uint256[2]", "name": "a", "type": "uint256[2]" },
+      { "internalType": "uint256[2][2]", "name": "b", "type": "uint256[2][2]" },
+      { "internalType": "uint256[2]", "name": "c", "type": "uint256[2]" },
+      { "internalType": "uint256[1]", "name": "input", "type": "uint256[1]" }
+    ],
+    "name": "submitProof",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "verifier",
+    "outputs": [
+      { "internalType": "contract IGroth16Verifier", "name": "", "type": "address" }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ];

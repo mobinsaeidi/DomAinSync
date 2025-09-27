@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  const verifierAddress = "0xFcE33744f429aB77Eb84f0cC0829876167C343c2"; // این رو از deployVerifier.js بگیری
+  const verifierAddress = "0xFcE33744f429aB77Eb84f0cC0829876167C343c2"; 
 
   console.log("Deploying WhoisZKBridge...");
   const Bridge = await ethers.getContractFactory("WhoisZKBridge");
